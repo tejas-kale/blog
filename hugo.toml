@@ -1,0 +1,104 @@
+baseURL = 'https://tejas-kale.github.io/blog/'
+languageCode = 'en-us'
+title = 'Tejas Kale Blog'
+theme = 'PaperMod'
+
+# PaperMod theme configuration
+[params]
+  # Basic settings
+  author = "Tejas Kale"
+  description = "Personal blog by Tejas Kale"
+  
+  # Theme settings
+  ShowReadingTime = true
+  ShowShareButtons = true
+  ShowPostNavLinks = true
+  ShowBreadCrumbs = true
+  ShowCodeCopyButtons = true
+  ShowWordCount = true
+  ShowRssButtonInSectionTermList = true
+  UseHugoToc = true
+  disableSpecial1stPost = false
+  disableScrollToTop = false
+  comments = false
+  hidemeta = false
+  hideSummary = false
+  showtoc = false
+  tocopen = false
+  
+  # Social links
+  [[params.socialIcons]]
+  name = "github"
+  url = "https://github.com/tejas-kale"
+  
+  [[params.socialIcons]]
+  name = "linkedin"
+  url = "https://linkedin.com/in/tejas-kale"
+
+# Menu configuration
+[[menus.main]]
+  identifier = "home"
+  name = "Home"
+  url = "/"
+  weight = 10
+
+[[menus.main]]
+  identifier = "about"
+  name = "About"
+  url = "/about/"
+  weight = 20
+
+[[menus.main]]
+  identifier = "posts"
+  name = "Posts"
+  url = "/posts/"
+  weight = 30
+
+[[menus.main]]
+  identifier = "categories"
+  name = "Categories"
+  url = "/categories/"
+  weight = 40
+
+[[menus.main]]
+  identifier = "tags"
+  name = "Tags"
+  url = "/tags/"
+  weight = 50
+
+# Taxonomies
+[taxonomies]
+  category = "categories"
+  tag = "tags"
+
+# Output formats
+[outputs]
+  home = ["HTML", "RSS", "JSON"]
+
+# Markup settings
+[markup]
+  [markup.highlight]
+    noClasses = false
+    codeFences = true
+    guessSyntax = true
+    lineNos = true
+    style = 'github'
+
+# Privacy settings
+[privacy]
+  [privacy.vimeo]
+    disabled = false
+    simple = true
+
+  [privacy.x]
+    disabled = false
+    enableDNT = true
+    simple = true
+
+  [privacy.instagram]
+    disabled = false
+    simple = true
+
+  [privacy.youtube]
+    disabled = false
+    privacyEnhanced = true
