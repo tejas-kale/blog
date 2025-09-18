@@ -49,7 +49,7 @@ git submodule update --init --recursive
 - **Main navigation**: About and Posts pages
 
 ### Theme Configuration
-The hugo-paper theme has a nested directory structure: `themes/paper/themes/paper/`. The `hugo.toml` correctly uses `theme = 'paper/themes/paper'` to point to the actual theme files in the nested directory.
+The hugo-paper theme is installed as a Git submodule at `themes/paper/`. The `hugo.toml` uses `theme = 'paper'` to reference the theme. Note that the submodule contains a nested theme structure, but Hugo uses the root level of the submodule.
 
 ### Content Structure
 - `content/posts/` - Blog posts
