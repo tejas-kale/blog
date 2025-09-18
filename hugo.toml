@@ -1,0 +1,15 @@
+baseURL = 'https://example.org/'
+languageCode = 'en-us'
+title = 'Tejas Kale'
+theme = 'paper'
+
+[menus]
+    [[menus.main]]
+    name = 'About'
+    pageRef = '/about'
+    weight = 10
+
+    [[menus.main]]
+    name = 'Posts'
+    pageRef = '/posts'
+    weight = 20

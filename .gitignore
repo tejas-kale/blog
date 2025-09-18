@@ -1,0 +1,69 @@
+# Hugo generated files
+public/
+resources/_gen/
+assets/jsconfig.json
+hugo_stats.json
+.hugo_build.lock
+
+# Hugo executables (if downloaded locally)
+hugo.exe
+hugo.darwin
+hugo.linux
+
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# Linux
+*~
+
+# Editor directories and files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Node.js dependencies (if using npm/yarn for asset processing)
+node_modules/
+
+# Package manager files (if using npm/yarn)
+package-lock.json
+yarn.lock
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Temporary files
+*.tmp
+*.temp
+
+# Cache files
+cache/
+.wireit
+
+# Backup files
+*.bak
+*.backup
+
+# GitHub Pages specific
+# Note: For GitHub Pages, you typically want to commit source files
+# and let GitHub Actions build the site, so public/ should be ignored
