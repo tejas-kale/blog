@@ -1,7 +1,9 @@
 baseURL = 'https://tejas-kale.github.io/blog/'
 languageCode = 'en-us'
 title = 'Tejas Kale'
-theme = 'paper'
+[module]
+  [[module.imports]]
+    path = "github.com/nanxiaobei/hugo-paper"
 
 # Cache configuration for GitHub Pages
 [caches]

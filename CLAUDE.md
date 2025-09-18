@@ -31,13 +31,16 @@ hugo new posts/post-title.md
 hugo new about.md
 ```
 
-### Theme and Submodule Management
+### Theme Management
 ```bash
-# Update the paper theme submodule
-git submodule update --remote themes/paper
+# Update Hugo modules (including themes)
+hugo mod get -u
 
-# Initialize submodules (for fresh clone)
-git submodule update --init --recursive
+# Download/update module dependencies
+hugo mod tidy
+
+# Check module status
+hugo mod graph
 ```
 
 ## Architecture
@@ -45,11 +48,16 @@ git submodule update --init --recursive
 ### Hugo Configuration
 - **Config file**: `hugo.toml`
 - **Base URL**: https://tejas-kale.github.io/blog/
-- **Theme**: hugo-paper (installed as Git submodule at `themes/paper/`)
+- **Theme**: hugo-paper (installed as Hugo module)
 - **Main navigation**: About and Posts pages
 
 ### Theme Configuration
-The hugo-paper theme is installed as a Git submodule at `themes/paper/`. The `hugo.toml` uses `theme = 'paper'` to reference the theme. Note that the submodule contains a nested theme structure, but Hugo uses the root level of the submodule.
+The hugo-paper theme is installed as a Hugo module. The `hugo.toml` uses a `[module]` section to import the theme:
+```toml
+[module]
+  [[module.imports]]
+    path = "github.com/nanxiaobei/hugo-paper"
+```
 
 ### Content Structure
 - `content/posts/` - Blog posts
@@ -57,10 +65,10 @@ The hugo-paper theme is installed as a Git submodule at `themes/paper/`. The `hu
 - `static/` - Static assets (images, etc.)
 - `layouts/` - Custom layout overrides (currently empty)
 
-### Git Submodules
-Two themes are installed as submodules:
-- `themes/paper/` - hugo-paper theme (currently used)
-- `themes/ananke/` - Ananke theme (fallback)
+### Hugo Modules
+The blog uses Hugo's module system for theme management:
+- `github.com/nanxiaobei/hugo-paper` - hugo-paper theme (primary theme)
+- Modules are managed via `go.mod` and downloaded automatically during build
 
 ## Deployment
 
@@ -74,15 +82,17 @@ Automated deployment via `.github/workflows/hugo.yaml`:
 
 ### Build Process
 The CI/CD pipeline:
-1. Checks out code with recursive submodules
+1. Checks out code (no submodules needed)
 2. Sets up Hugo, Node.js, Go, and Dart Sass
-3. Builds with `hugo --gc --minify --baseURL <pages-url>`
-4. Deploys to GitHub Pages
+3. Downloads Hugo modules with `hugo mod tidy`
+4. Builds with `hugo --gc --minify --baseURL <pages-url>`
+5. Deploys to GitHub Pages
 
 ## Local Environment Requirements
 
 - **Hugo**: v0.150.0+ (extended version for Sass support)
-- **Git**: For submodule management
+- **Go**: Required for Hugo modules
+- **Git**: For version control
 - **Node.js**: Optional, for theme development
 
 ## Theme Customization
