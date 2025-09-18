@@ -1,7 +1,12 @@
-baseURL = 'https://example.org/'
+baseURL = 'https://tejas-kale.github.io/blog/'
 languageCode = 'en-us'
 title = 'Tejas Kale'
 theme = 'paper'
+
+# Cache configuration for GitHub Pages
+[caches]
+  [caches.images]
+    dir = ':cacheDir/images'
 
 [menus]
     [[menus.main]]
