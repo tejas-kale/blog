@@ -64,6 +64,18 @@ cache/
 *.bak
 *.backup
 
+# Python virtual environments and uv
+.venv/
+.venv
+venv/
+.python-version
+uv.lock
+.uv-cache/
+pyproject.toml
+
+# Notebooks directory
+notebooks/
+
 # GitHub Pages specific
 # Note: For GitHub Pages, you typically want to commit source files
 # and let GitHub Actions build the site, so public/ should be ignored
