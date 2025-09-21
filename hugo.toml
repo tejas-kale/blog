@@ -13,7 +13,7 @@ title = 'Tejas Kale'
 [menus]
     [[menus.main]]
     name = 'About'
-    pageRef = '/about'
+    pageRef = '/'
     weight = 10
 
     [[menus.main]]
