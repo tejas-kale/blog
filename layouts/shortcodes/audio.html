@@ -1,0 +1,4 @@
+<audio controls>
+  <source src="{{ .Get "src" }}" type="audio/mpeg">
+  {{ if .Get "alt" }}{{ .Get "alt" }}{{ else }}Your browser does not support the audio element.{{ end }}
+</audio>

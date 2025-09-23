@@ -102,19 +102,13 @@ To test the notebook, I converted Eric Barker’s article This Is How To Be An A
 I discovered two deficiences though:
 * The voice cannot pronounce contractions like "'s" correctly. So, "let's" is pronounced at "let" and "it's" as "it".
 
-<audio controls>
-  <source src="/posts/let_pronunciation.mp3" type="audio/mpeg">
-  Pronunciation of 's
-</audio>
+{{< audio src="/let_pronunciation.mp3" alt="Pronunciation of 's" >}}
 
 * Around the middle of the article, the narration broke down: it produced gibberish, skipped ahead, then came back to resume normally from a point further ahead. It might be due to inconsistent or illegible text that the model encountered although I couldn't spot any issues. 
 
 Considering the following clip and see if you can follow it in the transcript below:
 
-<audio controls>
-  <source src="/posts/problems_in_the_middle.mp3" type="audio/mpeg">
-  Trouble in the Middle
-</audio>
+{{< audio src="/problems_in_the_middle.mp3" alt="Trouble in the Middle" >}}
 
 
 ```text

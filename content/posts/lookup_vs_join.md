@@ -12,4 +12,4 @@ There is a 40-50% improvement in execution time for creating the new column. Thi
 
 Past roughly a few dozen conditions, the generated expression can get large, so a broadcast join is often faster. This is a good rule of thumb to keep in mind.
 
-For further understanding of the data, the operations, and the difference in execution times, please read and execute the associated [Jupyter notebook](../../notebooks/dict_vs_joins.ipynb).
+For further understanding of the data, the operations, and the difference in execution times, please read and execute the associated [Jupyter notebook](https://github.com/tejas-kale/blog/blob/main/notebooks/dict_vs_joins.ipynb).
