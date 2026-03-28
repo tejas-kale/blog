@@ -12,4 +12,4 @@ Since the layout and data schema of the stacked bar chart never changes, I looke
 
 When I started experimenting with it, I found that GitHub Copilot was useful for working with ReportLab's API. Within a couple of hours, it wrote the necessary code and also explained the API to me clearly. Each PDF now takes 2 seconds to generate, **roughly 90x faster**. 
 
-If you wish to explore ReportLab and compare its performance to other plotting packages, check out [this notebook](../../notebooks/pdf_generation_benchmark.ipynb).
+If you wish to explore ReportLab and compare its performance to other plotting packages, check out [this notebook](https://github.com/tejas-kale/blog/blob/main/notebooks/pdf_generation_benchmark.ipynb).
