@@ -1,7 +1,14 @@
-<figure class="chart-embed">
-  <iframe
-    src="{{ .Get "src" | relURL }}"
-    title="{{ .Get "title" | default "Chart" }}"
-    loading="lazy"
-    scrolling="no"></iframe>
-</figure>
+<div class="chart-embed">
+  <div class="js-vega" data-spec="{{ .Get "src" | relURL }}" style="width:100%;min-height:40rem;"></div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/vega@6"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-lite@6.4.1"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-embed@7"></script>
+<script>
+(function () {
+  var el = document.querySelector(".chart-embed .js-vega");
+  vegaEmbed(el, el.getAttribute("data-spec"), {actions: false}).catch(function (err) {
+    el.textContent = "Chart failed to load: " + err.message;
+  });
+})();
+</script>

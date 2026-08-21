@@ -89,3 +89,4 @@ footer { padding: 1.5rem !important; border-top: 1px solid var(--rule); color: v
 }
 .post-note a { color: var(--muted) !important; text-decoration: none; }
 .post-note a:hover { color: var(--rust) !important; text-decoration: underline; }
+.chart-embed > div { min-height: 40rem; }
