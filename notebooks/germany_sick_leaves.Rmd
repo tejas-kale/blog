@@ -142,7 +142,7 @@ p <- ggplot(dak_plot) +
     expand = expansion(add = c(0.18, 0.22))
   ) +
   labs(
-    title = "A few long absences do most of the work in the 19.5-day average",
+    title = "Absences lasting 6+ weeks are 2.5% of cases but 37.9% of sick days",
     subtitle = "DAK-insured employees, 2025. Grey slices are absences of 8–42 days.",
     x = NULL,
     y = NULL,
@@ -150,7 +150,7 @@ p <- ggplot(dak_plot) +
   ) +
   theme_minimal(base_size = 12, base_family = font_family) +
   theme(
-    plot.title = element_text(face = "plain", size = 15, colour = ink),
+    plot.title = element_text(face = "plain", size = 14, colour = ink, lineheight = 1.15),
     plot.subtitle = element_text(size = 10.5, colour = muted, margin = margin(b = 10)),
     plot.caption = element_text(size = 8.5, colour = muted, hjust = 0, margin = margin(t = 10)),
     legend.position = "top",
