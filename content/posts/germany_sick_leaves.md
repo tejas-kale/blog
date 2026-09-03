@@ -1,7 +1,7 @@
 ---
 title: Diving into Germany's Sickness Statistics
 date: 2026-09-02
-draft: true
+draft: false
 ---
 
 BBC More or Less’s recent [podcast episode](https://www.bbc.co.uk/sounds/play/w3ct9995) on the statistic that employees in Germany take roughly 19.5 days of sick leave every year was interesting. It explained that the number comes from the statutory insurer DAK’s [report](https://www.dak.de/dak/unternehmen/reporte-forschung/gesundheitsreport-2026_223108), which counts all calendar days, including weekends, and excludes leave taken for a child’s illness and maternity leave. Given that Germany has 93 statutory health insurers, and that an expert in the episode claimed that the average was skewed by a handful of long-term absences, I wanted to answer two questions:
