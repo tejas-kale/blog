@@ -1,0 +1,55 @@
+{{- partial "head.html" . -}}
+{{- partial "header.html" . -}}
+<main class="site-main archive" aria-labelledby="archive-title">
+  <div class="archive-heading">
+    <h1 id="archive-title">Posts</h1>
+    <button id="search-toggle" class="search-toggle" type="button" aria-expanded="false" aria-controls="search-panel">Search</button>
+  </div>
+  <div id="search-panel" class="search-panel" hidden>
+    <label class="search-label" for="post-search">Search</label>
+    <input id="post-search" class="post-search" type="search" placeholder="Search posts…" autocomplete="off">
+  </div>
+  <p id="search-status" class="search-status" role="status" aria-live="polite"></p>
+
+  <div id="post-list" class="post-list">
+    {{ range where .Site.RegularPages.ByDate.Reverse "Draft" false }}
+      <article class="post-entry" data-search="{{ .Title }} {{ .Summary | plainify }} {{ .Plain }}">
+        <time datetime="{{ .Date.Format "2006-01-02" }}">{{ .Date.Format "02 Jan 2006" }}</time>
+        <div class="post-entry-content">
+          <h2><a href="{{ .RelPermalink }}">{{ .Title }}</a></h2>
+          <p>{{ .Summary | plainify }}</p>
+        </div>
+      </article>
+    {{ end }}
+  </div>
+  <p id="no-results" class="no-results" hidden>No posts match your search.</p>
+</main>
+{{- partial "footer.html" . -}}
+<script>
+  (() => {
+    const input = document.querySelector('#post-search');
+    const toggle = document.querySelector('#search-toggle');
+    const panel = document.querySelector('#search-panel');
+    const entries = [...document.querySelectorAll('.post-entry')];
+    const status = document.querySelector('#search-status');
+    const empty = document.querySelector('#no-results');
+    const filter = () => {
+      const query = input.value.trim().toLowerCase();
+      let visible = 0;
+      entries.forEach((entry) => {
+        const match = !query || entry.dataset.search.toLowerCase().includes(query);
+        entry.hidden = !match;
+        if (match) visible += 1;
+      });
+      empty.hidden = visible !== 0;
+      status.textContent = query ? `${visible} ${visible === 1 ? 'post' : 'posts'} found` : '';
+    };
+    toggle.addEventListener('click', () => {
+      const open = toggle.getAttribute('aria-expanded') === 'true';
+      toggle.setAttribute('aria-expanded', String(!open));
+      panel.hidden = open;
+      if (!open) input.focus();
+    });
+    input.addEventListener('input', filter);
+  })();
+</script>

@@ -1,0 +1,11 @@
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ if not .IsHome }}{{ .Title }} - {{ end }}{{ site.Title }}</title>
+  <meta name="description" content="{{ .Summary | plainify | default `A personal blog` }}">
+  <meta name="author" content="Tejas Kale">
+  {{ $main := resources.Get "main.css" }}
+  {{ $custom := resources.Get "css/custom.css" }}
+  {{ $css := slice $main $custom | resources.Concat "main.css" | minify }}
+  <link rel="stylesheet" href="{{ $css.RelPermalink }}">
+</head>

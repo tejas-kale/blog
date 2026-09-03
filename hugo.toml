@@ -1,6 +1,9 @@
 baseURL = 'https://tejas-kale.github.io/blog/'
 languageCode = 'en-us'
-title = 'Tejas Kale'
+title = "Tejas Kale's Blog"
+
+[author]
+  name = 'Tejas Kale'
 [module]
   [[module.imports]]
     path = "github.com/nanxiaobei/hugo-paper"
