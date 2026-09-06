@@ -39,10 +39,22 @@ OEWS = [
 ]
 
 
+USER_AGENT = "Mozilla/5.0 (compatible; data-scientist-dataset/1.1; +https://github.com/tejas-kale/blog)"
+
+
 def fetch(url: str) -> bytes:
-    request = urllib.request.Request(url, headers={"User-Agent": "data-scientist-dataset/1.0"})
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(request) as response:
         return response.read()
+
+
+def is_zip(path: Path) -> bool:
+    try:
+        with zipfile.ZipFile(path) as archive:
+            archive.namelist()
+        return True
+    except zipfile.BadZipFile:
+        return False
 
 
 def available_files(year: int) -> list[tuple[int, str]]:
@@ -63,7 +75,8 @@ def extract_from_csv(handle) -> tuple[int, float]:
     count = 0
     estimate = 0.0
     reader = csv.DictReader(io.TextIOWrapper(handle, encoding="utf-8-sig", newline=""))
-    for row in reader:
+    for raw in reader:
+        row = {(key or "").upper(): value for key, value in raw.items()}
         if row.get("PREMPNOT", "").strip() != "1":
             continue
         occ = occupation_code(row.get("PTIO1OCD") or row.get("PEIO1OCD") or "")
@@ -91,8 +104,11 @@ def extract_from_dat(handle) -> tuple[int, float]:
     return count, estimate
 
 
-def extract_month(archive: Path) -> tuple[int, float]:
-    with zipfile.ZipFile(archive) as zipped:
+def extract_month(source: Path) -> tuple[int, float]:
+    if source.suffix.lower() == ".csv":
+        with source.open("rb") as handle:
+            return extract_from_csv(handle)
+    with zipfile.ZipFile(source) as zipped:
         names = zipped.namelist()
         csv_names = [name for name in names if name.lower().endswith(".csv")]
         dat_names = [name for name in names if name.lower().endswith(".dat")]
@@ -110,7 +126,15 @@ def download_month(year: int, filename: str, cache: Path) -> Path:
     target.parent.mkdir(parents=True, exist_ok=True)
     if not target.exists():
         target.write_bytes(fetch(f"{CENSUS_ROOT}/{year}/basic/{filename}"))
-    return target
+    if is_zip(target):
+        return target
+    # A few zips (notably jun21pub.zip) are served as a WAF HTML page.
+    csv_name = filename.replace(".zip", ".csv")
+    csv_target = cache / str(year) / csv_name
+    if not csv_target.exists() or csv_target.stat().st_size < 1_000_000:
+        csv_target.write_bytes(fetch(f"{CENSUS_ROOT}/{year}/basic/{csv_name}"))
+    target.unlink(missing_ok=True)
+    return csv_target
 
 
 def build(database: Path, cache: Path, start: dt.date, end: dt.date | None) -> None:
@@ -127,12 +151,12 @@ def build(database: Path, cache: Path, start: dt.date, end: dt.date | None) -> N
             reference = dt.date(year, month, 1)
             if reference < start or (end and reference > end):
                 continue
-            archive = download_month(year, filename, cache)
-            count, estimate = extract_month(archive)
-            print(f"{reference.isoformat()} respondents={count} estimate={estimate:,.0f}")
+            source = download_month(year, filename, cache)
+            count, estimate = extract_month(source)
+            print(f"{reference.isoformat()} respondents={count} estimate={estimate:,.0f} file={source.name}")
             rows.append((reference, OCCUPATION_CODE, OCCUPATION_TITLE, count, estimate,
-                         None, None, filename, year, extraction_date,
-                         hashlib.sha256(archive.read_bytes()).hexdigest()))
+                         None, None, source.name, year, extraction_date,
+                         hashlib.sha256(source.read_bytes()).hexdigest()))
 
     con = duckdb.connect(str(database))
     con.execute("DROP TABLE IF EXISTS monthly_cps")
