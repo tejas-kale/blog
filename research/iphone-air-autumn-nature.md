@@ -1,6 +1,6 @@
 # Research notes: autumn nature photography on iPhone Air
 
-Gathered 2026-09-06 for a month-long neighbourhood project in Berlin. The tutorial in `content/drafts/iphone-air-autumn-photography.md` is written against these constraints. Do not copy Pro-model advice (ultra-wide, telephoto, macro, ProRAW) onto this phone.
+Gathered 2026-09-06 for a month-long neighbourhood project in Berlin ([issue #12](https://github.com/tejas-kale/blog/issues/12)). The tutorial in `content/drafts/iphone-air-autumn-photography.md` is written against these constraints. Do not copy Pro-model advice (ultra-wide, telephoto, macro, ProRAW) onto this phone.
 
 ## Hardware (iPhone Air)
 
