@@ -8,7 +8,9 @@ uv run --with duckdb scripts/build_data_scientist_dataset.py
 
 It discovers the latest available official CPS basic monthly files at run time,
 downloads compressed files to `/tmp/cps-basic-cache`, and writes
-`data/data_scientists.duckdb`. Raw survey files are not committed.
+`data/data_scientists.duckdb`. Raw survey files are not committed. The public-use
+zips contain fixed-width `.dat` records (Census also publishes uncompressed
+`.csv` files separately); the builder reads the `.dat` layout.
 
 The primary occupation is Census 2018 code `1240`. This is the official Census
 code that contains “Data scientists (15-2051)”, but it also contains other
