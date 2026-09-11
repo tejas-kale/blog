@@ -16,3 +16,9 @@ The primary occupation is Census 2018 code `1240`. This is the official Census
 code that contains “Data scientists (15-2051)”, but it also contains other
 mathematical-science occupations. The result must therefore be described as a
 combined CPS category, not as a clean standalone count of data scientists.
+
+After a builder run, derived tables are also written as CSV:
+
+- `cps_1240_monthly.csv` — monthly CPS 1240 employment (rounded)
+- `oews_15-2051_annual.csv` — May OEWS 15-2051 comparison points
+- `monthly_cps.csv`, `annual_oews.csv`, `methodology.csv` — full DuckDB dumps
