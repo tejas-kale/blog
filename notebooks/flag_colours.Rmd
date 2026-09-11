@@ -18,8 +18,10 @@ PNG thumbnail of every flag, then asks two vision models on
 1. **Google Gemini 3.5 Flash Lite** (`google/gemini-3.5-flash-lite`) counts the
    distinct colours and names them, via the [ellmer](https://ellmer.tidyverse.org)
    `chat_openrouter()` client.
-2. **Qwen3-VL-8B Instruct** (`qwen/qwen3-vl-8b-instruct`), an 8B vision model
-   from Alibaba's Qwen team, looks at the same flag and judges Gemini's answer.
+2. **Qwen3-VL-235B-A22B Instruct** (`qwen/qwen3-vl-235b-a22b-instruct`), the
+   flagship vision model from Alibaba's Qwen team, looks at the same flag and
+   judges Gemini's answer. The judge is the stronger model: Gemini Flash Lite
+   is the cheap counter, Qwen 235B-A22B is the referee.
 
 Set `OPENROUTER_API_KEY` in the environment (or in `~/.Renviron`) before knitting
 the model chunks. Wikipedia scraping and flag downloads run without a key.
@@ -162,7 +164,7 @@ if (!nzchar(api_key)) {
 }
 
 gemini_model <- "google/gemini-3.5-flash-lite"
-judge_model <- "qwen/qwen3-vl-8b-instruct"
+judge_model <- "qwen/qwen3-vl-235b-a22b-instruct"
 
 cache_path <- Sys.getenv(
   "FLAG_COLOUR_CACHE",
@@ -179,12 +181,30 @@ empty_cache <- tibble(
   judge_n_colours = integer(),
   judge_missing = character(),
   judge_extra = character(),
-  judge_comments = character()
+  judge_comments = character(),
+  judge_model_used = character()
 )
 cache <- empty_cache
 if (file.exists(cache_path)) {
   cache <- bind_rows(empty_cache, readRDS(cache_path)) |>
-    distinct(country, .keep_all = TRUE)
+    distinct(country, .keep_all = TRUE) |>
+    mutate(
+      judge_verdict = if_else(
+        coalesce(judge_model_used, "") == judge_model, judge_verdict, NA_character_
+      ),
+      judge_n_colours = if_else(
+        coalesce(judge_model_used, "") == judge_model, judge_n_colours, NA_integer_
+      ),
+      judge_missing = if_else(
+        coalesce(judge_model_used, "") == judge_model, judge_missing, NA_character_
+      ),
+      judge_extra = if_else(
+        coalesce(judge_model_used, "") == judge_model, judge_extra, NA_character_
+      ),
+      judge_comments = if_else(
+        coalesce(judge_model_used, "") == judge_model, judge_comments, NA_character_
+      )
+    )
 }
 
 flag_type <- type_object(
@@ -292,7 +312,8 @@ for (i in seq_len(nrow(pending))) {
     judge_n_colours = NA_integer_,
     judge_missing = NA_character_,
     judge_extra = NA_character_,
-    judge_comments = NA_character_
+    judge_comments = NA_character_,
+    judge_model_used = NA_character_
   )
   cache <- bind_rows(filter(cache, country != row$country), new_row)
   saveRDS(cache, cache_path)
@@ -301,11 +322,13 @@ for (i in seq_len(nrow(pending))) {
 cache
 ```
 
-## 4. Qwen3-VL-8B judges Gemini
+## 4. Qwen3-VL-235B judges Gemini
 
-Qwen3-VL-8B Instruct is a lightweight multimodal model from a Chinese lab
-(Alibaba / Qwen). It sees the flag **and** Gemini's named colours, then returns
-a verdict, its own count, and a short comment.
+Qwen3-VL-235B-A22B Instruct is a Mixture-of-Experts vision model from Alibaba /
+Qwen (22B active parameters, 235B total). That is a step up from Gemini 3.5
+Flash Lite, which is the point of the second pass: the cheaper model proposes
+colours, the stronger Chinese-lab model audits them. It sees the flag **and**
+Gemini's named list, then returns a verdict, its own count, and a short comment.
 
 ```{r qwen-judge}
 needs_judge <- cache |>
@@ -346,6 +369,9 @@ for (i in seq_len(nrow(needs_judge))) {
       ),
       judge_comments = if_else(
         country == row$country, judgement$comments, judge_comments
+      ),
+      judge_model_used = if_else(
+        country == row$country, judge_model, judge_model_used
       )
     )
   saveRDS(cache, cache_path)
@@ -400,7 +426,7 @@ results |>
   tab_header(
     title = "National flag colours, according to Gemini 3.5 Flash Lite",
     subtitle = paste(
-      "Judged by Qwen3-VL-8B Instruct via OpenRouter.",
+      "Judged by Qwen3-VL-235B-A22B Instruct via OpenRouter.",
       "Flags from Wikipedia / Wikimedia Commons."
     )
   ) |>
