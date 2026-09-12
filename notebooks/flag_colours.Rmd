@@ -12,7 +12,7 @@ output:
 
 Wikipedia publishes a [list of sovereign states](https://en.wikipedia.org/wiki/List_of_sovereign_states)
 together with each country's flag. This notebook scrapes that list, downloads a
-PNG thumbnail of every flag, then asks two vision models on
+PNG thumbnail of every flag, then asks three vision models on
 [OpenRouter](https://openrouter.ai) to look at the pictures:
 
 1. **Google Gemini 3.5 Flash Lite** (`google/gemini-3.5-flash-lite`) counts the
@@ -20,8 +20,10 @@ PNG thumbnail of every flag, then asks two vision models on
    `chat_openrouter()` client.
 2. **Qwen3-VL-235B-A22B Instruct** (`qwen/qwen3-vl-235b-a22b-instruct`), the
    flagship vision model from Alibaba's Qwen team, looks at the same flag and
-   judges Gemini's answer. The judge is the stronger model: Gemini Flash Lite
-   is the cheap counter, Qwen 235B-A22B is the referee.
+   judges Gemini's answer.
+3. **Google Gemini 3.6 Flash** (`google/gemini-3.6-flash`) runs the same judge
+   prompt independently, so we can compare two referees against the cheap
+   counter.
 
 Set `OPENROUTER_API_KEY` in the environment (or in `~/.Renviron`) before knitting
 the model chunks. Wikipedia scraping and flag downloads run without a key.
@@ -30,6 +32,9 @@ Optional knobs:
 
 - `MAX_FLAGS` — process only the first *n* countries (useful while testing).
 - `FLAG_COLOUR_CACHE` — path to an RDS cache so a interrupted run can resume.
+
+This notebook was generated with [Cursor](https://cursor.com). I reviewed and
+modified the code.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
@@ -44,6 +49,7 @@ library(stringr)
 library(tidyr)
 library(ellmer)
 library(gt)
+library(ggplot2)
 library(scales)
 ```
 
@@ -164,17 +170,29 @@ window. Results are cached after every country.
 api_key <- Sys.getenv("OPENROUTER_API_KEY")
 if (!nzchar(api_key)) {
   knitr::knit_exit(
-    "Set OPENROUTER_API_KEY to count colours with Gemini and to run the Qwen judge."
+    "Set OPENROUTER_API_KEY to count colours with Gemini and to run the judges."
   )
 }
 
 gemini_model <- "google/gemini-3.5-flash-lite"
 judge_model <- "qwen/qwen3-vl-235b-a22b-instruct"
+flash_model <- "google/gemini-3.6-flash"
 
-cache_path <- Sys.getenv(
-  "FLAG_COLOUR_CACHE",
-  unset = file.path("data", "flag_colour_cache.rds")
-)
+cache_path <- Sys.getenv("FLAG_COLOUR_CACHE", unset = "")
+if (!nzchar(cache_path)) {
+  candidates <- c(
+    file.path("data", "flag_colour_cache.rds"),
+    file.path("..", "data", "flag_colour_cache.rds")
+  )
+  existing <- candidates[file.exists(candidates)]
+  cache_path <- if (length(existing) > 0) {
+    normalizePath(existing[[1]])
+  } else if (basename(getwd()) == "notebooks") {
+    file.path("..", "data", "flag_colour_cache.rds")
+  } else {
+    file.path("data", "flag_colour_cache.rds")
+  }
+}
 dir.create(dirname(cache_path), recursive = TRUE, showWarnings = FALSE)
 
 empty_cache <- tibble(
@@ -187,7 +205,13 @@ empty_cache <- tibble(
   judge_missing = character(),
   judge_extra = character(),
   judge_comments = character(),
-  judge_model_used = character()
+  judge_model_used = character(),
+  flash_verdict = character(),
+  flash_n_colours = integer(),
+  flash_missing = character(),
+  flash_extra = character(),
+  flash_comments = character(),
+  flash_model_used = character()
 )
 cache <- empty_cache
 if (file.exists(cache_path)) {
@@ -208,6 +232,21 @@ if (file.exists(cache_path)) {
       ),
       judge_comments = if_else(
         coalesce(judge_model_used, "") == judge_model, judge_comments, NA_character_
+      ),
+      flash_verdict = if_else(
+        coalesce(flash_model_used, "") == flash_model, flash_verdict, NA_character_
+      ),
+      flash_n_colours = if_else(
+        coalesce(flash_model_used, "") == flash_model, flash_n_colours, NA_integer_
+      ),
+      flash_missing = if_else(
+        coalesce(flash_model_used, "") == flash_model, flash_missing, NA_character_
+      ),
+      flash_extra = if_else(
+        coalesce(flash_model_used, "") == flash_model, flash_extra, NA_character_
+      ),
+      flash_comments = if_else(
+        coalesce(flash_model_used, "") == flash_model, flash_comments, NA_character_
       )
     )
 }
@@ -318,7 +357,13 @@ for (i in seq_len(nrow(pending))) {
     judge_missing = NA_character_,
     judge_extra = NA_character_,
     judge_comments = NA_character_,
-    judge_model_used = NA_character_
+    judge_model_used = NA_character_,
+    flash_verdict = NA_character_,
+    flash_n_colours = NA_integer_,
+    flash_missing = NA_character_,
+    flash_extra = NA_character_,
+    flash_comments = NA_character_,
+    flash_model_used = NA_character_
   )
   cache <- bind_rows(filter(cache, country != row$country), new_row)
   saveRDS(cache, cache_path)
@@ -383,7 +428,65 @@ for (i in seq_len(nrow(needs_judge))) {
 }
 ```
 
-## 5. Results
+## 5. Gemini 3.6 Flash judges Gemini
+
+Gemini 3.6 Flash is the current Flash-tier workhorse from Google: stronger than
+3.5 Flash Lite, cheaper and faster than Qwen 235B. It gets the same judge
+prompt and schema as Qwen — the flag image plus Gemini Lite's named list — so
+the two verdicts are comparable.
+
+```{r gemini-36-judge}
+needs_flash <- cache |>
+  filter(is.na(flash_verdict) | flash_verdict == "") |>
+  select(-flag_file) |>
+  inner_join(countries |> select(country, flag_file), by = "country")
+
+if (nrow(needs_flash) > 0) {
+  message("Gemini 3.6 Flash judge: ", nrow(needs_flash), " flags still to score.")
+}
+
+for (i in seq_len(nrow(needs_flash))) {
+  row <- needs_flash[i, ]
+  judgement <- structured_with_retry(
+    function() new_openrouter_chat(flash_model, judge_system),
+    paste0(
+      "Country: ", row$country, "\n",
+      "Gemini said there are ", row$gemini_n_colours,
+      " colours: ", row$gemini_colours, "\n",
+      "Look at the flag image and judge that answer."
+    ),
+    content_image_file(row$flag_file, resize = "low"),
+    type = judge_type
+  )
+  cache <- cache |>
+    mutate(
+      flash_verdict = if_else(
+        country == row$country, as.character(judgement$verdict), flash_verdict
+      ),
+      flash_n_colours = if_else(
+        country == row$country, as.integer(judgement$correct_n_colours), flash_n_colours
+      ),
+      flash_missing = if_else(
+        country == row$country, collapse_colours(judgement$missing_colours), flash_missing
+      ),
+      flash_extra = if_else(
+        country == row$country, collapse_colours(judgement$extra_colours), flash_extra
+      ),
+      flash_comments = if_else(
+        country == row$country, judgement$comments, flash_comments
+      ),
+      flash_model_used = if_else(
+        country == row$country, flash_model, flash_model_used
+      )
+    )
+  saveRDS(cache, cache_path)
+  if (i %% 10L == 0L || i == nrow(needs_flash)) {
+    message("Gemini 3.6 Flash judge: ", i, "/", nrow(needs_flash))
+  }
+}
+```
+
+## 6. Results
 
 ```{r results-table}
 results <- countries |>
@@ -391,16 +494,33 @@ results <- countries |>
   inner_join(cache |> select(-flag_file), by = "country") |>
   arrange(country)
 
-agree_rate <- mean(results$judge_verdict == "agree", na.rm = TRUE)
+qwen_agree_rate <- mean(results$judge_verdict == "agree", na.rm = TRUE)
+flash_agree_rate <- mean(results$flash_verdict == "agree", na.rm = TRUE)
 
 results |>
-  count(judge_verdict, name = "flags") |>
-  mutate(share = flags / sum(flags))
+  select(country, judge_verdict, flash_verdict) |>
+  pivot_longer(
+    cols = c(judge_verdict, flash_verdict),
+    names_to = "judge",
+    values_to = "verdict"
+  ) |>
+  mutate(
+    judge = recode(
+      judge,
+      judge_verdict = "Qwen3-VL-235B",
+      flash_verdict = "Gemini 3.6 Flash"
+    )
+  ) |>
+  count(judge, verdict, name = "flags") |>
+  group_by(judge) |>
+  mutate(share = flags / sum(flags)) |>
+  ungroup()
 ```
 
-Qwen agreed with Gemini on
-**`r sprintf("%.0f%%", 100 * agree_rate)`** of the
-`r nrow(results)` flags in this run.
+Qwen agreed with Gemini Lite on
+**`r sprintf("%.0f%%", 100 * qwen_agree_rate)`** of the
+`r nrow(results)` flags; Gemini 3.6 Flash agreed on
+**`r sprintf("%.0f%%", 100 * flash_agree_rate)`**.
 
 ```{r flag-table}
 results |>
@@ -408,7 +528,9 @@ results |>
     flag_file, country,
     gemini_n_colours, gemini_colours,
     judge_verdict, judge_n_colours,
-    judge_missing, judge_extra, judge_comments
+    judge_missing, judge_extra, judge_comments,
+    flash_verdict, flash_n_colours,
+    flash_missing, flash_extra, flash_comments
   ) |>
   gt() |>
   text_transform(
@@ -438,14 +560,19 @@ results |>
     gemini_colours = "Gemini colours",
     judge_verdict = "Qwen verdict",
     judge_n_colours = "Qwen n",
-    judge_missing = "Missing",
-    judge_extra = "Extra",
-    judge_comments = "Qwen comments"
+    judge_missing = "Qwen missing",
+    judge_extra = "Qwen extra",
+    judge_comments = "Qwen comments",
+    flash_verdict = "3.6 Flash verdict",
+    flash_n_colours = "3.6 Flash n",
+    flash_missing = "3.6 Flash missing",
+    flash_extra = "3.6 Flash extra",
+    flash_comments = "3.6 Flash comments"
   ) |>
   tab_header(
     title = "National flag colours, according to Gemini 3.5 Flash Lite",
     subtitle = paste(
-      "Judged by Qwen3-VL-235B-A22B Instruct via OpenRouter.",
+      "Judged by Qwen3-VL-235B-A22B Instruct and Gemini 3.6 Flash via OpenRouter.",
       "Flags from Wikipedia / Wikimedia Commons."
     )
   ) |>
@@ -453,7 +580,7 @@ results |>
     "Sources: https://en.wikipedia.org/wiki/List_of_sovereign_states and Wikimedia Commons flag files."
   ) |>
   data_color(
-    columns = judge_verdict,
+    columns = c(judge_verdict, flash_verdict),
     fn = scales::col_factor(
       palette = c(agree = "#C8E6C9", mostly_agree = "#FFE082", disagree = "#FFCDD2"),
       domain = c("agree", "mostly_agree", "disagree"),
@@ -466,6 +593,136 @@ results |>
   )
 ```
 
-Gemini and Qwen are both reading pixels, not a vexillological gazetteer, so
+The three models are reading pixels, not a vexillological gazetteer, so
 shading, coats of arms, and gold-versus-yellow will produce disagreements.
 The cache file at `r cache_path` can be re-used on the next knit.
+
+The table below lists every flag where Gemini Lite, Qwen, and Gemini 3.6 Flash
+do not all give the same count. Replace the `NA`s with a hand count.
+Everyone else keeps Gemini Lite's number.
+
+```{r flag-n-colours}
+hand_counts <- tribble(
+  ~country,              ~corrected_n,
+  "Andorra",             NA_integer_,
+  "Belize",              NA_integer_,
+  "Croatia",             NA_integer_,
+  "Dominica",            NA_integer_,
+  "Dominican Republic",  NA_integer_,
+  "El Salvador",         NA_integer_,
+  "Equatorial Guinea",   NA_integer_,
+  "Eswatini",            NA_integer_,
+  "Ethiopia",            NA_integer_,
+  "Fiji",                NA_integer_,
+  "Guatemala",           NA_integer_,
+  "Jordan",              NA_integer_,
+  "Kenya",               NA_integer_,
+  "Malta",               NA_integer_,
+  "Mexico",              NA_integer_,
+  "Nicaragua",           NA_integer_,
+  "San Marino",          NA_integer_,
+  "Serbia",              NA_integer_,
+  "Slovenia",            NA_integer_,
+  "Spain",               NA_integer_,
+  "Turkmenistan",        NA_integer_,
+  "Uzbekistan",          NA_integer_
+)
+
+results <- results |>
+  left_join(hand_counts, by = "country") |>
+  mutate(
+    models_disagree = gemini_n_colours != judge_n_colours |
+      gemini_n_colours != flash_n_colours |
+      judge_n_colours != flash_n_colours,
+    flag_n_colours = coalesce(corrected_n, gemini_n_colours)
+  )
+
+results |>
+  filter(models_disagree) |>
+  select(
+    country,
+    gemini_n_colours, judge_n_colours, flash_n_colours,
+    corrected_n, flag_n_colours
+  ) |>
+  arrange(country)
+```
+
+```{r flag-n-colours-chart, fig.width=8, fig.height=5}
+economist_red <- "#E3120B"
+economist_bg <- "#D5E4EB"
+economist_ink <- "#0C0C0C"
+
+results |>
+  count(flag_n_colours, name = "flags") |>
+  ggplot(aes(x = factor(flag_n_colours), y = flags)) +
+    geom_col(fill = "#3E4659", width = 0.68) +
+    geom_text(
+      aes(label = flags),
+      vjust = -0.45,
+      size = 3.5,
+      colour = economist_ink,
+      family = "sans"
+    ) +
+    geom_hline(yintercept = 0, colour = economist_ink, linewidth = 0.45) +
+    scale_x_discrete(name = "Colours on the flag") +
+    scale_y_continuous(
+      name = NULL,
+      expand = expansion(mult = c(0, 0.18)),
+      breaks = scales::pretty_breaks()
+    ) +
+    labs(
+      title = "How many colours are in each national flag?",
+      subtitle = "Number of flags",
+      caption = "Hand-corrected counts where Gemini Lite, Qwen, and Gemini 3.6 Flash disagree; Gemini 3.5 Flash Lite otherwise. Sources: Wikipedia, Wikimedia Commons."
+    ) +
+    theme_classic(base_size = 13, base_family = "sans") +
+    theme(
+      plot.background = element_rect(fill = economist_bg, colour = NA),
+      panel.background = element_rect(fill = economist_bg, colour = NA),
+      panel.grid.major.y = element_line(colour = "white", linewidth = 0.55),
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor = element_blank(),
+      axis.line.x = element_line(colour = economist_ink, linewidth = 0.45),
+      axis.line.y = element_blank(),
+      axis.ticks.x = element_line(colour = economist_ink, linewidth = 0.45),
+      axis.ticks.length.x = unit(4.5, "pt"),
+      axis.ticks.y = element_blank(),
+      axis.text = element_text(colour = economist_ink, size = 11),
+      axis.text.x = element_text(margin = margin(t = 6)),
+      axis.title.x = element_text(
+        colour = economist_ink,
+        size = 11,
+        margin = margin(t = 10)
+      ),
+      plot.title = element_text(
+        face = "bold",
+        size = 16,
+        colour = economist_ink,
+        hjust = 0,
+        margin = margin(t = 10, b = 4)
+      ),
+      plot.subtitle = element_text(
+        size = 11,
+        colour = economist_ink,
+        hjust = 0,
+        margin = margin(b = 12)
+      ),
+      plot.caption = element_text(
+        size = 9,
+        colour = "#444444",
+        hjust = 0,
+        margin = margin(t = 12)
+      ),
+      plot.title.position = "plot",
+      plot.caption.position = "plot",
+      plot.margin = margin(18, 16, 16, 12)
+    ) +
+    annotate(
+      "segment",
+      x = -Inf, xend = Inf,
+      y = Inf, yend = Inf,
+      colour = economist_red,
+      linewidth = 2.2
+    ) +
+    coord_cartesian(clip = "off")
+```
