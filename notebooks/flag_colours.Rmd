@@ -1,0 +1,714 @@
+---
+title: "How many colours are in each national flag?"
+author: "Tejas Kale"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: paper
+    df_print: paged
+---
+
+Wikipedia publishes a [list of sovereign states](https://en.wikipedia.org/wiki/List_of_sovereign_states)
+together with each country's flag. This notebook scrapes that list, downloads a
+PNG thumbnail of every flag, then asks three vision models on
+[OpenRouter](https://openrouter.ai) to look at the pictures:
+
+1. **Google Gemini 3.5 Flash Lite** (`google/gemini-3.5-flash-lite`) counts the
+   distinct colours and names them, via the [ellmer](https://ellmer.tidyverse.org)
+   `chat_openrouter()` client.
+2. **Qwen3-VL-235B-A22B Instruct** (`qwen/qwen3-vl-235b-a22b-instruct`), the
+   flagship vision model from Alibaba's Qwen team, looks at the same flag and
+   judges Gemini's answer.
+3. **Google Gemini 3.6 Flash** (`google/gemini-3.6-flash`) runs the same judge
+   prompt independently, so we can compare two referees against the cheap
+   counter.
+
+Set `OPENROUTER_API_KEY` in the environment (or in `~/.Renviron`) before knitting
+the model chunks. Wikipedia scraping and flag downloads run without a key.
+
+Optional knobs:
+
+- `MAX_FLAGS` — process only the first *n* countries (useful while testing).
+- `FLAG_COLOUR_CACHE` — path to an RDS cache so a interrupted run can resume.
+
+This notebook was generated with [Cursor](https://cursor.com). I reviewed and
+modified the code.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r packages}
+library(rvest)
+library(httr2)
+library(dplyr)
+library(purrr)
+library(stringr)
+library(tidyr)
+library(ellmer)
+library(gt)
+library(ggplot2)
+library(scales)
+```
+
+## 1. Countries from Wikipedia
+
+The first sortable table on *List of sovereign states* is the usual census of
+UN members and observer states (about 195 rows). Each country cell starts with a
+`flagicon` thumbnail and a bold link. Letter-index header rows are skipped
+because they have no flag.
+
+```{r wikipedia-countries}
+wiki_url <- "https://en.wikipedia.org/wiki/List_of_sovereign_states"
+ua <- "FlagColourNotebook/1.0 (https://tejas-kale.github.io/blog/; educational flag-colour analysis)"
+
+wiki_html <- request(wiki_url) |>
+  req_user_agent(ua) |>
+  req_perform() |>
+  resp_body_html()
+
+country_rows <- wiki_html |>
+  html_element("table.wikitable.sortable") |>
+  html_elements("tr")
+
+countries <- map_dfr(country_rows, function(row) {
+  cell <- html_element(row, "td")
+  if (inherits(cell, "xml_missing") || length(cell) == 0) {
+    return(NULL)
+  }
+  flag_img <- html_element(cell, "span.flagicon img")
+  name_link <- html_element(cell, "span.flagicon + a")
+  if (inherits(name_link, "xml_missing") || length(name_link) == 0) {
+    name_link <- html_element(cell, "b a[href*='/wiki/']")
+  }
+  if (inherits(flag_img, "xml_missing") || length(flag_img) == 0 ||
+      inherits(name_link, "xml_missing") || length(name_link) == 0) {
+    return(NULL)
+  }
+  tibble(
+    country = html_text2(name_link),
+    wiki_href = html_attr(name_link, "href"),
+    thumb_src = html_attr(flag_img, "src")
+  )
+}) |>
+  filter(!is.na(country), country != "") |>
+  mutate(
+    wiki_url = xml2::url_absolute(wiki_href, "https://en.wikipedia.org/"),
+    # Standard thumbnail steps only (20, 40, 60, 120, 250, …); 200px is 400.
+    thumb_url = if_else(
+      str_starts(thumb_src, "//"),
+      paste0("https:", thumb_src),
+      thumb_src
+    ) |>
+      str_replace("/\\d+px-", "/250px-") |>
+      str_replace("\\?.*$", "")
+  ) |>
+  distinct(country, .keep_all = TRUE)
+
+max_flags <- suppressWarnings(as.integer(Sys.getenv("MAX_FLAGS", unset = "")))
+if (!is.na(max_flags) && max_flags > 0L) {
+  countries <- slice_head(countries, n = max_flags)
+}
+
+countries
+```
+
+## 2. Flag images from Wikipedia
+
+The list already carries Wikimedia thumbnail URLs (PNG renderings of the SVG
+flags). Those PNGs are what vision APIs accept. Files are stored under
+`/tmp/flag-colours/` so they never land in the repo.
+
+```{r download-flags}
+flag_dir <- file.path("/tmp", "flag-colours")
+dir.create(flag_dir, recursive = TRUE, showWarnings = FALSE)
+
+slugify <- function(x) {
+  x |>
+    str_to_lower() |>
+    str_replace_all("[^a-z0-9]+", "-") |>
+    str_replace_all("(^-+|-+$)", "")
+}
+
+countries <- countries |>
+  mutate(
+    flag_file = file.path(flag_dir, paste0(slugify(country), ".png"))
+  )
+
+download_flag <- function(url, dest) {
+  if (file.exists(dest) && file.info(dest)$size > 0) {
+    return(invisible(dest))
+  }
+  request(url) |>
+    req_user_agent(ua) |>
+    req_retry(max_tries = 4) |>
+    req_timeout(30) |>
+    req_perform(path = dest)
+  Sys.sleep(0.1)
+  invisible(dest)
+}
+
+walk2(countries$thumb_url, countries$flag_file, download_flag)
+
+countries <- countries |>
+  mutate(flag_ok = file.exists(flag_file) & file.info(flag_file)$size > 0)
+
+stopifnot(all(countries$flag_ok))
+n_countries <- nrow(countries)
+```
+
+## 3. Gemini Flash Lite counts the colours
+
+Each flag is sent as an image with a structured schema so Gemini has to return
+an integer count and a list of colour names, not free-form prose. A **new**
+chat is opened per flag so previous images do not pile up in the context
+window. Results are cached after every country.
+
+```{r gemini-colours}
+api_key <- Sys.getenv("OPENROUTER_API_KEY")
+if (!nzchar(api_key)) {
+  knitr::knit_exit(
+    "Set OPENROUTER_API_KEY to count colours with Gemini and to run the judges."
+  )
+}
+
+gemini_model <- "google/gemini-3.5-flash-lite"
+judge_model <- "qwen/qwen3-vl-235b-a22b-instruct"
+flash_model <- "google/gemini-3.6-flash"
+
+cache_path <- Sys.getenv("FLAG_COLOUR_CACHE", unset = "")
+if (!nzchar(cache_path)) {
+  candidates <- c(
+    file.path("data", "flag_colour_cache.rds"),
+    file.path("..", "data", "flag_colour_cache.rds")
+  )
+  existing <- candidates[file.exists(candidates)]
+  cache_path <- if (length(existing) > 0) {
+    normalizePath(existing[[1]])
+  } else if (basename(getwd()) == "notebooks") {
+    file.path("..", "data", "flag_colour_cache.rds")
+  } else {
+    file.path("data", "flag_colour_cache.rds")
+  }
+}
+dir.create(dirname(cache_path), recursive = TRUE, showWarnings = FALSE)
+
+empty_cache <- tibble(
+  country = character(),
+  flag_file = character(),
+  gemini_n_colours = integer(),
+  gemini_colours = character(),
+  judge_verdict = character(),
+  judge_n_colours = integer(),
+  judge_missing = character(),
+  judge_extra = character(),
+  judge_comments = character(),
+  judge_model_used = character(),
+  flash_verdict = character(),
+  flash_n_colours = integer(),
+  flash_missing = character(),
+  flash_extra = character(),
+  flash_comments = character(),
+  flash_model_used = character()
+)
+cache <- empty_cache
+if (file.exists(cache_path)) {
+  cache <- bind_rows(empty_cache, readRDS(cache_path)) |>
+    distinct(country, .keep_all = TRUE) |>
+    mutate(
+      judge_verdict = if_else(
+        coalesce(judge_model_used, "") == judge_model, judge_verdict, NA_character_
+      ),
+      judge_n_colours = if_else(
+        coalesce(judge_model_used, "") == judge_model, judge_n_colours, NA_integer_
+      ),
+      judge_missing = if_else(
+        coalesce(judge_model_used, "") == judge_model, judge_missing, NA_character_
+      ),
+      judge_extra = if_else(
+        coalesce(judge_model_used, "") == judge_model, judge_extra, NA_character_
+      ),
+      judge_comments = if_else(
+        coalesce(judge_model_used, "") == judge_model, judge_comments, NA_character_
+      ),
+      flash_verdict = if_else(
+        coalesce(flash_model_used, "") == flash_model, flash_verdict, NA_character_
+      ),
+      flash_n_colours = if_else(
+        coalesce(flash_model_used, "") == flash_model, flash_n_colours, NA_integer_
+      ),
+      flash_missing = if_else(
+        coalesce(flash_model_used, "") == flash_model, flash_missing, NA_character_
+      ),
+      flash_extra = if_else(
+        coalesce(flash_model_used, "") == flash_model, flash_extra, NA_character_
+      ),
+      flash_comments = if_else(
+        coalesce(flash_model_used, "") == flash_model, flash_comments, NA_character_
+      )
+    )
+}
+
+flag_type <- type_object(
+  n_colours = type_integer(
+    "Number of distinct colours that a person would name when describing the flag. Ignore anti-aliasing, shadows, and tiny fimbriations that are only a drawing artefact."
+  ),
+  colours = type_array(
+    type_string(),
+    "Common English colour names (for example red, white, navy blue, gold, green). List each colour once, from largest area to smallest."
+  )
+)
+
+judge_type <- type_object(
+  verdict = type_enum(
+    c("agree", "mostly_agree", "disagree"),
+    "agree = count and names are right; mostly_agree = right idea with a naming or minor-count slip; disagree = a colour is missing, invented, or the count is wrong."
+  ),
+  correct_n_colours = type_integer(
+    "The number of distinct colours you would count on this flag."
+  ),
+  missing_colours = type_array(
+    type_string(),
+    "Colours present on the flag that Gemini omitted. Empty if none."
+  ),
+  extra_colours = type_array(
+    type_string(),
+    "Colours Gemini named that are not really on the flag. Empty if none."
+  ),
+  comments = type_string("One or two sentences explaining the verdict.")
+)
+
+new_openrouter_chat <- function(model, system_prompt) {
+  chat_openrouter(
+    system_prompt = system_prompt,
+    model = model,
+    echo = "none"
+  )
+}
+
+structured_with_retry <- function(chat_factory, ..., type, tries = 4) {
+  last_err <- NULL
+  for (i in seq_len(tries)) {
+    out <- tryCatch(
+      chat_factory()$chat_structured(..., type = type),
+      error = function(e) e
+    )
+    if (!inherits(out, "error")) {
+      return(out)
+    }
+    last_err <- out
+    Sys.sleep(min(2^i, 16))
+  }
+  stop(last_err)
+}
+
+gemini_system <- paste(
+  "You are looking at a national flag image.",
+  "Count the distinct colours a vexillologist would list in a short description.",
+  "Treat metal tints such as gold and yellow as the colour you actually see.",
+  "Do not invent colours that are not visible."
+)
+
+judge_system <- paste(
+  "You are a careful second reader of national flags.",
+  "You will see the flag image and Gemini's colour list.",
+  "Judge whether that list matches the image. Be strict about missing or invented colours,",
+  "but treat near-synonyms (navy / dark blue, gold / yellow) as mostly agreeing."
+)
+
+collapse_colours <- function(x) {
+  if (is.null(x) || length(x) == 0 || all(is.na(x))) {
+    return("")
+  }
+  paste(x, collapse = ", ")
+}
+
+pending <- countries |>
+  anti_join(
+    cache |> filter(!is.na(gemini_n_colours)),
+    by = "country"
+  )
+
+if (nrow(pending) > 0) {
+  message("Gemini: ", nrow(pending), " flags still to score.")
+}
+
+for (i in seq_len(nrow(pending))) {
+  row <- pending[i, ]
+  gemini <- structured_with_retry(
+    function() new_openrouter_chat(gemini_model, gemini_system),
+    paste0(
+      "How many distinct colours are in the flag of ",
+      row$country,
+      "? Name them."
+    ),
+    content_image_file(row$flag_file, resize = "low"),
+    type = flag_type
+  )
+  new_row <- tibble(
+    country = row$country,
+    flag_file = row$flag_file,
+    gemini_n_colours = gemini$n_colours,
+    gemini_colours = collapse_colours(gemini$colours),
+    judge_verdict = NA_character_,
+    judge_n_colours = NA_integer_,
+    judge_missing = NA_character_,
+    judge_extra = NA_character_,
+    judge_comments = NA_character_,
+    judge_model_used = NA_character_,
+    flash_verdict = NA_character_,
+    flash_n_colours = NA_integer_,
+    flash_missing = NA_character_,
+    flash_extra = NA_character_,
+    flash_comments = NA_character_,
+    flash_model_used = NA_character_
+  )
+  cache <- bind_rows(filter(cache, country != row$country), new_row)
+  saveRDS(cache, cache_path)
+}
+
+cache
+```
+
+## 4. Qwen3-VL-235B judges Gemini
+
+Qwen3-VL-235B-A22B Instruct is a Mixture-of-Experts vision model from Alibaba /
+Qwen (22B active parameters, 235B total). That is a step up from Gemini 3.5
+Flash Lite, which is the point of the second pass: the cheaper model proposes
+colours, the stronger Chinese-lab model audits them. It sees the flag **and**
+Gemini's named list, then returns a verdict, its own count, and a short comment.
+
+```{r qwen-judge}
+needs_judge <- cache |>
+  filter(is.na(judge_verdict) | judge_verdict == "") |>
+  select(-flag_file) |>
+  inner_join(countries |> select(country, flag_file), by = "country")
+
+if (nrow(needs_judge) > 0) {
+  message("Qwen judge: ", nrow(needs_judge), " flags still to score.")
+}
+
+for (i in seq_len(nrow(needs_judge))) {
+  row <- needs_judge[i, ]
+  judgement <- structured_with_retry(
+    function() new_openrouter_chat(judge_model, judge_system),
+    paste0(
+      "Country: ", row$country, "\n",
+      "Gemini said there are ", row$gemini_n_colours,
+      " colours: ", row$gemini_colours, "\n",
+      "Look at the flag image and judge that answer."
+    ),
+    content_image_file(row$flag_file, resize = "low"),
+    type = judge_type
+  )
+  cache <- cache |>
+    mutate(
+      judge_verdict = if_else(
+        country == row$country, as.character(judgement$verdict), judge_verdict
+      ),
+      judge_n_colours = if_else(
+        country == row$country, as.integer(judgement$correct_n_colours), judge_n_colours
+      ),
+      judge_missing = if_else(
+        country == row$country, collapse_colours(judgement$missing_colours), judge_missing
+      ),
+      judge_extra = if_else(
+        country == row$country, collapse_colours(judgement$extra_colours), judge_extra
+      ),
+      judge_comments = if_else(
+        country == row$country, judgement$comments, judge_comments
+      ),
+      judge_model_used = if_else(
+        country == row$country, judge_model, judge_model_used
+      )
+    )
+  saveRDS(cache, cache_path)
+}
+```
+
+## 5. Gemini 3.6 Flash judges Gemini
+
+Gemini 3.6 Flash is the current Flash-tier workhorse from Google: stronger than
+3.5 Flash Lite, cheaper and faster than Qwen 235B. It gets the same judge
+prompt and schema as Qwen — the flag image plus Gemini Lite's named list — so
+the two verdicts are comparable.
+
+```{r gemini-36-judge}
+needs_flash <- cache |>
+  filter(is.na(flash_verdict) | flash_verdict == "") |>
+  select(-flag_file) |>
+  inner_join(countries |> select(country, flag_file), by = "country")
+
+if (nrow(needs_flash) > 0) {
+  message("Gemini 3.6 Flash judge: ", nrow(needs_flash), " flags still to score.")
+}
+
+for (i in seq_len(nrow(needs_flash))) {
+  row <- needs_flash[i, ]
+  judgement <- structured_with_retry(
+    function() new_openrouter_chat(flash_model, judge_system),
+    paste0(
+      "Country: ", row$country, "\n",
+      "Gemini said there are ", row$gemini_n_colours,
+      " colours: ", row$gemini_colours, "\n",
+      "Look at the flag image and judge that answer."
+    ),
+    content_image_file(row$flag_file, resize = "low"),
+    type = judge_type
+  )
+  cache <- cache |>
+    mutate(
+      flash_verdict = if_else(
+        country == row$country, as.character(judgement$verdict), flash_verdict
+      ),
+      flash_n_colours = if_else(
+        country == row$country, as.integer(judgement$correct_n_colours), flash_n_colours
+      ),
+      flash_missing = if_else(
+        country == row$country, collapse_colours(judgement$missing_colours), flash_missing
+      ),
+      flash_extra = if_else(
+        country == row$country, collapse_colours(judgement$extra_colours), flash_extra
+      ),
+      flash_comments = if_else(
+        country == row$country, judgement$comments, flash_comments
+      ),
+      flash_model_used = if_else(
+        country == row$country, flash_model, flash_model_used
+      )
+    )
+  saveRDS(cache, cache_path)
+  if (i %% 10L == 0L || i == nrow(needs_flash)) {
+    message("Gemini 3.6 Flash judge: ", i, "/", nrow(needs_flash))
+  }
+}
+```
+
+## 6. Results
+
+```{r results-table}
+results <- countries |>
+  select(country, flag_file) |>
+  inner_join(cache |> select(-flag_file), by = "country") |>
+  arrange(country)
+
+qwen_agree_rate <- mean(results$judge_verdict == "agree", na.rm = TRUE)
+flash_agree_rate <- mean(results$flash_verdict == "agree", na.rm = TRUE)
+
+results |>
+  select(country, judge_verdict, flash_verdict) |>
+  pivot_longer(
+    cols = c(judge_verdict, flash_verdict),
+    names_to = "judge",
+    values_to = "verdict"
+  ) |>
+  mutate(
+    judge = recode(
+      judge,
+      judge_verdict = "Qwen3-VL-235B",
+      flash_verdict = "Gemini 3.6 Flash"
+    )
+  ) |>
+  count(judge, verdict, name = "flags") |>
+  group_by(judge) |>
+  mutate(share = flags / sum(flags)) |>
+  ungroup()
+```
+
+Qwen agreed with Gemini Lite on
+**`r sprintf("%.0f%%", 100 * qwen_agree_rate)`** of the
+`r nrow(results)` flags; Gemini 3.6 Flash agreed on
+**`r sprintf("%.0f%%", 100 * flash_agree_rate)`**.
+
+```{r flag-table}
+results |>
+  select(
+    flag_file, country,
+    gemini_n_colours, gemini_colours,
+    judge_verdict, judge_n_colours,
+    judge_missing, judge_extra, judge_comments,
+    flash_verdict, flash_n_colours,
+    flash_missing, flash_extra, flash_comments
+  ) |>
+  gt() |>
+  text_transform(
+    locations = cells_body(columns = flag_file),
+    fn = function(x) {
+      vapply(x, function(path) {
+        img <- as.character(local_image(filename = path, height = 28))
+        sub(
+          "<img ",
+          '<img class="flag-thumb" tabindex="0" title="Click to enlarge" onclick="this.classList.toggle(\'is-zoomed\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();this.classList.toggle(\'is-zoomed\')}" ',
+          img,
+          fixed = TRUE
+        )
+      }, character(1))
+    }
+  ) |>
+  opt_css(
+    css = "
+    .flag-thumb { cursor: zoom-in; vertical-align: middle; }
+    .flag-thumb.is-zoomed { height: 120px !important; width: auto !important; cursor: zoom-out; }
+    "
+  ) |>
+  cols_label(
+    flag_file = "",
+    country = "Country",
+    gemini_n_colours = "Gemini n",
+    gemini_colours = "Gemini colours",
+    judge_verdict = "Qwen verdict",
+    judge_n_colours = "Qwen n",
+    judge_missing = "Qwen missing",
+    judge_extra = "Qwen extra",
+    judge_comments = "Qwen comments",
+    flash_verdict = "3.6 Flash verdict",
+    flash_n_colours = "3.6 Flash n",
+    flash_missing = "3.6 Flash missing",
+    flash_extra = "3.6 Flash extra",
+    flash_comments = "3.6 Flash comments"
+  ) |>
+  tab_header(
+    title = "National flag colours, according to Gemini 3.5 Flash Lite",
+    subtitle = paste(
+      "Judged by Qwen3-VL-235B-A22B Instruct and Gemini 3.6 Flash via OpenRouter.",
+      "Flags from Wikipedia / Wikimedia Commons."
+    )
+  ) |>
+  tab_source_note(
+    "Sources: https://en.wikipedia.org/wiki/List_of_sovereign_states and Wikimedia Commons flag files."
+  ) |>
+  data_color(
+    columns = c(judge_verdict, flash_verdict),
+    fn = scales::col_factor(
+      palette = c(agree = "#C8E6C9", mostly_agree = "#FFE082", disagree = "#FFCDD2"),
+      domain = c("agree", "mostly_agree", "disagree"),
+      na.color = "#EEEEEE"
+    )
+  ) |>
+  tab_options(
+    table.font.size = px(13),
+    data_row.padding = px(4)
+  )
+```
+
+The three models are reading pixels, not a vexillological gazetteer, so
+shading, coats of arms, and gold-versus-yellow will produce disagreements.
+The cache file at `r cache_path` can be re-used on the next knit.
+
+The table below lists every flag where Gemini Lite, Qwen, and Gemini 3.6 Flash
+do not all give the same count. Replace the `NA`s with a hand count.
+Everyone else keeps Gemini Lite's number.
+
+```{r flag-n-colours}
+hand_counts <- tribble(
+  ~country,              ~corrected_n,
+  "Andorra",             5,               # Black was incorrectly detected
+  "Belize",              8,               # Multiple colours in the crest
+  "Burundi",             3,               # All models saw a gold colour that is not visible to the eye
+  "Cambodia",            4,               # Gemini 3.6 Flash picked up the missing black outline colour
+  "Croatia",             6,               # Flash picked up the missing black colour
+  "Dominica",            7,               # Qwen was wrong
+  "Dominican Republic",  6,               # Qwen was wrong although I can't say if it's brown/black
+  "El Salvador",         6,               # Brown cannot be spotted and the flag has a rainbow
+  "Equatorial Guinea",   8,               # Black and grey missed by all
+  "Eswatini",            5,               # Flash lite saw an additional grey
+  "Ethiopia",            4,               # Qwen failed to see blue
+  "Fiji",                8,               # Black missed by all
+  "Guatemala",           8,               # Flash got it correct, Lite missed red
+  "Jordan",              4,               # Lite incorrectly saw a yellow
+  "Kenya",               4,               # Lite incorrectly saw a grey
+  "Liechtenstein",       4,               # Flash got it correct, the others missed the black outlines
+  "Malta",               3,               # Qwen failed to spot grey
+  "Mexico",              11,              # Qwen saw the coat of arms but did not include its colours in the count
+  "Moldova",             6,               # Lite and Qwen saw a white that is not present
+  "Mozambique",          5,               # Lite and Qwen saw a blue that is not present
+  "Nicaragua",           6,               # Qwen failed to see brown and another flag that has a rainbow
+  "Papua New Guinea",    4,               # Lite and Qwen failed to see white
+  "Paraguay",            6,               # Lite and Qwen failed to see black
+  "San Marino",          7,               # Qwen failed to see brown and yellow
+  "Serbia",              6,               # Flash and Qwen failed missed the black outlines
+  "Slovenia",            4,               # Qwen failed to spot the yellow
+  "Spain",               7,               # Qwen failed to spot the green and purple
+  "Turkmenistan",        4,               # Lite saw a black that is not present
+  "Tuvalu",              5,               # Lite and Qwen failed to see white
+  "Uruguay",             4,               # Lite and Qwen failed to see brown
+  "Uzbekistan",          4,               # Lite saw a yellow that is not present
+  "Zimbabwe",            5,               # Lite and Qwen saw a gold that is not present
+)
+
+results <- results |>
+  left_join(hand_counts, by = "country") |>
+  mutate(
+    models_disagree = gemini_n_colours != judge_n_colours |
+      gemini_n_colours != flash_n_colours |
+      judge_n_colours != flash_n_colours,
+    flag_n_colours = coalesce(corrected_n, gemini_n_colours)
+  )
+
+results |>
+  filter(models_disagree) |>
+  select(
+    country,
+    gemini_n_colours, judge_n_colours, flash_n_colours,
+    corrected_n, flag_n_colours
+  ) |>
+  arrange(country)
+```
+
+```{r flag-n-colours-chart, fig.width=8, fig.height=5}
+colour_counts <- results |>
+  count(flag_n_colours, name = "flags")
+three_colour_flags <- colour_counts$flags[colour_counts$flag_n_colours == 3]
+three_colour_x <- match(3, sort(unique(colour_counts$flag_n_colours)))
+
+colour_counts |>
+  ggplot(aes(x = factor(flag_n_colours), y = flags)) +
+    geom_col(width = 0.68) +
+    geom_text(
+      aes(label = flags),
+      vjust = -0.45,
+      size = 3.5
+    ) +
+    annotate(
+      "text",
+      x = three_colour_x + 1.15,
+      y = three_colour_flags * 1.05,
+      label = "3 colours are the most common",
+      hjust = 0,
+      size = 3.5
+    ) +
+    annotate(
+      "curve",
+      x = three_colour_x + 1.1,
+      xend = three_colour_x + 0.4,
+      y = three_colour_flags * 1.04,
+      yend = three_colour_flags * 1.02,
+      curvature = 0.3,
+      arrow = grid::arrow(length = grid::unit(0.15, "inches")),
+      linewidth = 0.5
+    ) +
+    scale_x_discrete(name = NULL) +
+    scale_y_continuous(
+      name = NULL,
+      expand = expansion(mult = c(0, 0.18)),
+      breaks = scales::pretty_breaks()
+    ) +
+    labs(
+      title = "How many colours are in each national flag?",
+      caption = stringr::str_wrap(
+        "Hand-corrected counts where Gemini Lite, Qwen, and Gemini 3.6 Flash disagree; Gemini 3.5 Flash Lite otherwise. Sources: Wikipedia, Wikimedia Commons.",
+        width = 95
+      )
+    ) +
+    theme_gray() +
+    theme(
+      axis.ticks.y = element_blank(),
+      axis.text.y = element_blank(),
+      axis.title.x = element_text(margin = margin(t = 8)),
+      plot.caption = element_text(size = 7),
+      plot.margin = margin(10, 10, 14, 10)
+    ) +
+    coord_cartesian(clip = "off")
+```
