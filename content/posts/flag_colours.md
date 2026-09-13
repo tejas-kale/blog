@@ -4,9 +4,9 @@ date: "2026-09-13"
 draft: false
 ---
 
-A fun question popped into my head the other day: how many colours are in each flag of a country? To answer it, I thought using LLMs would be a good choice. 
+A fun question popped into my head the other day: how many colours are in each flag of a country? To answer it, I thought using LLMs would be a good choice.
 
-So, with the use of [R](https://github.com/tejas-kale/blog/blob/main/notebooks/flag_colours.Rmd) and the `tidyverse` libraries, I first fetched a list of countries from Wikipedia and then their flags from Wikimedia. Next, using the `ellmer` library, I asked Gemini 3.5 Flash Lite (via the OpenRouter API) to count and name the colours in each flag. I then used the Qwen3-VL-235B-A22B-Instruct and Gemini 3.6 Flash models to judge the Lite model's work. These models are larger than the Lite one so I expected them to be better judges. I checked their disagreements manually. The Qwen model is nearly a year older than the Lite model so its size advantage might be negated by its age. 
+So, with the use of [R](https://github.com/tejas-kale/blog/blob/main/notebooks/flag_colours.Rmd) and the `tidyverse` libraries, I first fetched a list of countries from Wikipedia and then their flags from Wikimedia. Next, using the `ellmer` library, I asked Gemini 3.5 Flash Lite (via the OpenRouter API) to count and name the colours in each flag. I then used the Qwen3-VL-235B-A22B-Instruct and Gemini 3.6 Flash models to judge the Lite model's work. These models are larger than the Lite one so I expected them to be better judges. I checked their disagreements manually. The Qwen model is nearly a year older than the Lite model so its size advantage might be negated by its age.
 
 The Lite model performed quite well with the agreement/disagreement [results]({{< relURL "results/flag-colours.html" >}}) as follows:
 
