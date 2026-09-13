@@ -604,28 +604,38 @@ Everyone else keeps Gemini Lite's number.
 ```{r flag-n-colours}
 hand_counts <- tribble(
   ~country,              ~corrected_n,
-  "Andorra",             NA_integer_,
-  "Belize",              NA_integer_,
-  "Croatia",             NA_integer_,
-  "Dominica",            NA_integer_,
-  "Dominican Republic",  NA_integer_,
-  "El Salvador",         NA_integer_,
-  "Equatorial Guinea",   NA_integer_,
-  "Eswatini",            NA_integer_,
-  "Ethiopia",            NA_integer_,
-  "Fiji",                NA_integer_,
-  "Guatemala",           NA_integer_,
-  "Jordan",              NA_integer_,
-  "Kenya",               NA_integer_,
-  "Malta",               NA_integer_,
-  "Mexico",              NA_integer_,
-  "Nicaragua",           NA_integer_,
-  "San Marino",          NA_integer_,
-  "Serbia",              NA_integer_,
-  "Slovenia",            NA_integer_,
-  "Spain",               NA_integer_,
-  "Turkmenistan",        NA_integer_,
-  "Uzbekistan",          NA_integer_
+  "Andorra",             5,               # Black was incorrectly detected
+  "Belize",              8,               # Multiple colours in the crest
+  "Burundi",             3,               # All models saw a gold colour that is not visible to the eye
+  "Cambodia",            4,               # Gemini 3.6 Flash picked up the missing black outline colour
+  "Croatia",             6,               # Flash picked up the missing black colour
+  "Dominica",            7,               # Qwen was wrong
+  "Dominican Republic",  6,               # Qwen was wrong although I can't say if it's brown/black
+  "El Salvador",         6,               # Brown cannot be spotted and the flag has a rainbow
+  "Equatorial Guinea",   8,               # Black and grey missed by all
+  "Eswatini",            5,               # Flash lite saw an additional grey
+  "Ethiopia",            4,               # Qwen failed to see blue
+  "Fiji",                8,               # Black missed by all
+  "Guatemala",           8,               # Flash got it correct, Lite missed red
+  "Jordan",              4,               # Lite incorrectly saw a yellow
+  "Kenya",               4,               # Lite incorrectly saw a grey
+  "Liechtenstein",       4,               # Flash got it correct, the others missed the black outlines
+  "Malta",               3,               # Qwen failed to spot grey
+  "Mexico",              11,              # Qwen saw the coat of arms but did not include its colours in the count
+  "Moldova",             6,               # Lite and Qwen saw a white that is not present
+  "Mozambique",          5,               # Lite and Qwen saw a blue that is not present
+  "Nicaragua",           6,               # Qwen failed to see brown and another flag that has a rainbow
+  "Papua New Guinea",    4,               # Lite and Qwen failed to see white
+  "Paraguay",            6,               # Lite and Qwen failed to see black
+  "San Marino",          7,               # Qwen failed to see brown and yellow
+  "Serbia",              6,               # Flash and Qwen failed missed the black outlines
+  "Slovenia",            4,               # Qwen failed to spot the yellow
+  "Spain",               7,               # Qwen failed to spot the green and purple
+  "Turkmenistan",        4,               # Lite saw a black that is not present
+  "Tuvalu",              5,               # Lite and Qwen failed to see white
+  "Uruguay",             4,               # Lite and Qwen failed to see brown
+  "Uzbekistan",          4,               # Lite saw a yellow that is not present
+  "Zimbabwe",            5,               # Lite and Qwen saw a gold that is not present
 )
 
 results <- results |>
@@ -648,23 +658,38 @@ results |>
 ```
 
 ```{r flag-n-colours-chart, fig.width=8, fig.height=5}
-economist_red <- "#E3120B"
-economist_bg <- "#D5E4EB"
-economist_ink <- "#0C0C0C"
+colour_counts <- results |>
+  count(flag_n_colours, name = "flags")
+three_colour_flags <- colour_counts$flags[colour_counts$flag_n_colours == 3]
+three_colour_x <- match(3, sort(unique(colour_counts$flag_n_colours)))
 
-results |>
-  count(flag_n_colours, name = "flags") |>
+colour_counts |>
   ggplot(aes(x = factor(flag_n_colours), y = flags)) +
-    geom_col(fill = "#3E4659", width = 0.68) +
+    geom_col(width = 0.68) +
     geom_text(
       aes(label = flags),
       vjust = -0.45,
-      size = 3.5,
-      colour = economist_ink,
-      family = "sans"
+      size = 3.5
     ) +
-    geom_hline(yintercept = 0, colour = economist_ink, linewidth = 0.45) +
-    scale_x_discrete(name = "Colours on the flag") +
+    annotate(
+      "text",
+      x = three_colour_x + 1.15,
+      y = three_colour_flags * 1.05,
+      label = "3 colours are the most common",
+      hjust = 0,
+      size = 3.5
+    ) +
+    annotate(
+      "curve",
+      x = three_colour_x + 1.1,
+      xend = three_colour_x + 0.4,
+      y = three_colour_flags * 1.04,
+      yend = three_colour_flags * 1.02,
+      curvature = 0.3,
+      arrow = grid::arrow(length = grid::unit(0.15, "inches")),
+      linewidth = 0.5
+    ) +
+    scale_x_discrete(name = NULL) +
     scale_y_continuous(
       name = NULL,
       expand = expansion(mult = c(0, 0.18)),
@@ -672,57 +697,18 @@ results |>
     ) +
     labs(
       title = "How many colours are in each national flag?",
-      subtitle = "Number of flags",
-      caption = "Hand-corrected counts where Gemini Lite, Qwen, and Gemini 3.6 Flash disagree; Gemini 3.5 Flash Lite otherwise. Sources: Wikipedia, Wikimedia Commons."
+      caption = stringr::str_wrap(
+        "Hand-corrected counts where Gemini Lite, Qwen, and Gemini 3.6 Flash disagree; Gemini 3.5 Flash Lite otherwise. Sources: Wikipedia, Wikimedia Commons.",
+        width = 95
+      )
     ) +
-    theme_classic(base_size = 13, base_family = "sans") +
+    theme_gray() +
     theme(
-      plot.background = element_rect(fill = economist_bg, colour = NA),
-      panel.background = element_rect(fill = economist_bg, colour = NA),
-      panel.grid.major.y = element_line(colour = "white", linewidth = 0.55),
-      panel.grid.major.x = element_blank(),
-      panel.grid.minor = element_blank(),
-      axis.line.x = element_line(colour = economist_ink, linewidth = 0.45),
-      axis.line.y = element_blank(),
-      axis.ticks.x = element_line(colour = economist_ink, linewidth = 0.45),
-      axis.ticks.length.x = unit(4.5, "pt"),
       axis.ticks.y = element_blank(),
-      axis.text = element_text(colour = economist_ink, size = 11),
-      axis.text.x = element_text(margin = margin(t = 6)),
-      axis.title.x = element_text(
-        colour = economist_ink,
-        size = 11,
-        margin = margin(t = 10)
-      ),
-      plot.title = element_text(
-        face = "bold",
-        size = 16,
-        colour = economist_ink,
-        hjust = 0,
-        margin = margin(t = 10, b = 4)
-      ),
-      plot.subtitle = element_text(
-        size = 11,
-        colour = economist_ink,
-        hjust = 0,
-        margin = margin(b = 12)
-      ),
-      plot.caption = element_text(
-        size = 9,
-        colour = "#444444",
-        hjust = 0,
-        margin = margin(t = 12)
-      ),
-      plot.title.position = "plot",
-      plot.caption.position = "plot",
-      plot.margin = margin(18, 16, 16, 12)
-    ) +
-    annotate(
-      "segment",
-      x = -Inf, xend = Inf,
-      y = Inf, yend = Inf,
-      colour = economist_red,
-      linewidth = 2.2
+      axis.text.y = element_blank(),
+      axis.title.x = element_text(margin = margin(t = 8)),
+      plot.caption = element_text(size = 7),
+      plot.margin = margin(10, 10, 14, 10)
     ) +
     coord_cartesian(clip = "off")
 ```
