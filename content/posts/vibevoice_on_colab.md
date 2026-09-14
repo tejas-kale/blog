@@ -2,6 +2,8 @@
 title: "Set Up VibeVoice on Google Colab"
 date: "2025-09-18"
 draft: false
+kind: note
+description: "Getting Microsoft VibeVoice running when a MacBook Air will not."
 ---
 
 On August 26, 2025, Microsoft released [VibeVoice](https://microsoft.github.io/VibeVoice/), a Python framework and underlying model to convert text into speech. The following is a collection of its novel features as highlighted on their website:
@@ -102,13 +104,13 @@ To test the notebook, I converted Eric Barker’s article This Is How To Be An A
 I discovered two deficiences though:
 * The voice cannot pronounce contractions like "'s" correctly. So, "let's" is pronounced at "let" and "it's" as "it".
 
-{{< audio src="/let_pronunciation.mp3" alt="Pronunciation of 's" >}}
+{{< audio src="vibevoice_on_colab/let_pronunciation.mp3" alt="Pronunciation of 's" >}}
 
 * Around the middle of the article, the narration broke down: it produced gibberish, skipped ahead, then came back to resume normally from a point further ahead. It might be due to inconsistent or illegible text that the model encountered although I couldn't spot any issues. 
 
 Considering the following clip and see if you can follow it in the transcript below:
 
-{{< audio src="/problems_in_the_middle.mp3" alt="Trouble in the Middle" >}}
+{{< audio src="vibevoice_on_colab/problems_in_the_middle.mp3" alt="Trouble in the Middle" >}}
 
 
 ```text

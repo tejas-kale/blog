@@ -4,105 +4,37 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a personal blog built with Hugo and deployed to GitHub Pages. The site uses the hugo-paper theme (v6.30) as a Git submodule for a clean, minimal design.
+Personal blog built with Hugo and deployed to GitHub Pages. Theme: hugo-paper, imported as a Hugo module.
 
 **Live site**: https://tejas-kale.github.io/blog/
 
 ## Development Commands
 
-### Local Development
 ```bash
-# Start local development server
-hugo server
-
-# Start with drafts enabled
-hugo server -D
-
-# Build the site locally
-hugo --gc --minify
-```
-
-### Content Management
-```bash
-# Create a new blog post
+hugo server          # local preview
+hugo server -D       # include drafts
+hugo --gc --minify   # production build
 hugo new posts/post-title.md
-
-# Create a new page
-hugo new about.md
+hugo mod get -u && hugo mod tidy
 ```
 
-### Theme Management
-```bash
-# Update Hugo modules (including themes)
-hugo mod get -u
+## Layout
 
-# Download/update module dependencies
-hugo mod tidy
+- `content/posts/` — every article, including unpublished ones. `draft: true` in front matter is enough; do not add a `content/drafts/` section.
+- `content/about.md` — About page. Home is the post list; do not add a Posts nav item.
+- `notebooks/<post-file-stem>/` — source notebooks, caches, and unpublished charts for that post.
+- `static/<post-file-stem>/` — files the site serves for that post (charts, audio, images). Site-wide files (`tejas_kale_cv.pdf`) stay at `static/` root.
+- `assets/custom.css` — site chrome only. Hugo's `assets/` directory is the CSS pipeline, not per-post material.
+- `layouts/` — `list.html`, a thin `single.html` and `head.html` (hugo-paper still references removed `.Site.Author`), and shortcodes. Do not copy the theme's comment widgets.
 
-# Check module status
-hugo mod graph
+## Post front matter
+
+```yaml
+title: "..."
+date: "YYYY-MM-DD"
+draft: false
+description: "One line for the homepage. Never omit this; the list does not auto-summarise."
+kind: note   # optional. Lab notes only. Essays omit this field.
 ```
 
-## Architecture
-
-### Hugo Configuration
-- **Config file**: `hugo.toml`
-- **Base URL**: https://tejas-kale.github.io/blog/
-- **Theme**: hugo-paper (installed as Hugo module)
-- **Main navigation**: About and Posts pages
-
-### Theme Configuration
-The hugo-paper theme is installed as a Hugo module. The `hugo.toml` uses a `[module]` section to import the theme:
-```toml
-[module]
-  [[module.imports]]
-    path = "github.com/nanxiaobei/hugo-paper"
-```
-
-### Content Structure
-- `content/posts/` - Blog posts
-- `content/about.md` - About page
-- `static/` - Static assets (images, etc.)
-- `layouts/` - Custom layout overrides (currently empty)
-
-### Hugo Modules
-The blog uses Hugo's module system for theme management:
-- `github.com/nanxiaobei/hugo-paper` - hugo-paper theme (primary theme)
-- Modules are managed via `go.mod` and downloaded automatically during build
-
-## Deployment
-
-### GitHub Actions
-Automated deployment via `.github/workflows/hugo.yaml`:
-- **Trigger**: Push to main branch or manual dispatch
-- **Hugo version**: 0.150.0 (extended)
-- **Node.js version**: 22.18.0
-- **Go version**: 1.25.1
-- **Output**: `public/` directory deployed to GitHub Pages
-
-### Build Process
-The CI/CD pipeline:
-1. Checks out code (no submodules needed)
-2. Sets up Hugo, Node.js, Go, and Dart Sass
-3. Downloads Hugo modules with `hugo mod tidy`
-4. Builds with `hugo --gc --minify --baseURL <pages-url>`
-5. Deploys to GitHub Pages
-
-## Local Environment Requirements
-
-- **Hugo**: v0.150.0+ (extended version for Sass support)
-- **Go**: Required for Hugo modules
-- **Git**: For version control
-- **Node.js**: Optional, for theme development
-
-## Theme Customization
-
-The hugo-paper theme supports extensive customization via `hugo.toml` params:
-- Color schemes (linen, wheat, gray, light)
-- Social media icons (GitHub, Twitter, LinkedIn, etc.)
-- Profile configuration (avatar, name, bio)
-- Comment systems (Disqus, Giscus, Graph Comment)
-- Math typesetting (KaTeX)
-- Dark mode toggle
-
-Refer to `themes/paper/README.md` for complete configuration options.
+Link notebooks on GitHub. Do not publish knitted HTML or review tables under `static/`.

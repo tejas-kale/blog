@@ -180,18 +180,7 @@ flash_model <- "google/gemini-3.6-flash"
 
 cache_path <- Sys.getenv("FLAG_COLOUR_CACHE", unset = "")
 if (!nzchar(cache_path)) {
-  candidates <- c(
-    file.path("data", "flag_colour_cache.rds"),
-    file.path("..", "data", "flag_colour_cache.rds")
-  )
-  existing <- candidates[file.exists(candidates)]
-  cache_path <- if (length(existing) > 0) {
-    normalizePath(existing[[1]])
-  } else if (basename(getwd()) == "notebooks") {
-    file.path("..", "data", "flag_colour_cache.rds")
-  } else {
-    file.path("data", "flag_colour_cache.rds")
-  }
+  cache_path <- "flag_colour_cache.rds"
 }
 dir.create(dirname(cache_path), recursive = TRUE, showWarnings = FALSE)
 
@@ -523,7 +512,7 @@ Qwen agreed with Gemini Lite on
 **`r sprintf("%.0f%%", 100 * flash_agree_rate)`**.
 
 ```{r flag-table}
-results |>
+flag_table <- results |>
   select(
     flag_file, country,
     gemini_n_colours, gemini_colours,
@@ -591,6 +580,13 @@ results |>
     table.font.size = px(13),
     data_row.padding = px(4)
   )
+
+gtsave(
+  flag_table,
+  filename = file.path("..", "..", "static", "flag_colours", "results.html")
+)
+
+flag_table
 ```
 
 The three models are reading pixels, not a vexillological gazetteer, so

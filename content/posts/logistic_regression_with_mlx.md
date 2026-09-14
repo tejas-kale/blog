@@ -2,6 +2,8 @@
 title: "Logistic Regression with MLX"
 date: "2025-09-23"
 draft: false
+kind: note
+description: "A logistic regression neural net trained on Apple silicon with MLX."
 ---
 The M1 MacBook Air, though not powerful, contains 8 CPU cores and 7-8 GPU cores. These processing units share a unified memory. In order to use the GPUs for training machine learning and deep learning models, one needs to use the [MLX](https://opensource.apple.com/projects/mlx/) framework. As quoted on the website:
 
@@ -9,7 +11,7 @@ The M1 MacBook Air, though not powerful, contains 8 CPU cores and 7-8 GPU cores.
 
 In this post, we will build a logistic regression model as a neural network using MLX. It will be trained on a [retinopathy](https://www.kaggle.com/datasets/mohamedabdalkader/retinal-disease-detection/data) dataset available on Kaggle. The code in this notebook is inspired from [lecture 8](https://www.youtube.com/watch?v=DzE0eSdy5Hk) of Jeremy Howard's course, Introduction to Machine Learning for Coders. 
 
-The notebook that forms the basis of this post can be found [here](https://github.com/tejas-kale/blog/blob/main/notebooks/mlx_logistic_regression.ipynb). Since the MLX interface is similar to NumPy, its [quick start guide](https://ml-explore.github.io/mlx/build/html/usage/quick_start.html) is an excellent resource to get an introduction to the framework.
+The notebook that forms the basis of this post can be found [here](https://github.com/tejas-kale/blog/blob/main/notebooks/logistic_regression_with_mlx/mlx_logistic_regression.ipynb). Since the MLX interface is similar to NumPy, its [quick start guide](https://ml-explore.github.io/mlx/build/html/usage/quick_start.html) is an excellent resource to get an introduction to the framework.
 
 ## Data
 We’ll use the diabetic retinopathy training annotations (`annotations.csv`) and images under `data/diabetic_retinopathy/train/images/`.
@@ -48,7 +50,7 @@ plt.axis('off')
 plt.show()
 ```
     
-![Sample Image](../../mlx_logistic_regression_17_0.png)
+![Sample Image]({{< relURL "logistic_regression_with_mlx/mlx_logistic_regression_17_0.png" >}})
     
 
 ## Data Preparation

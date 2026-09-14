@@ -7,6 +7,7 @@ title = "Tejas Kale's Blog"
 
 [params]
   name = 'Tejas Kale'
+  mainSections = ['posts']
 
 [module]
   [[module.imports]]
@@ -22,8 +23,3 @@ title = "Tejas Kale's Blog"
     name = 'About'
     pageRef = '/about'
     weight = 10
-
-    [[menus.main]]
-    name = 'Posts'
-    pageRef = '/posts'
-    weight = 20

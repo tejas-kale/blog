@@ -2,6 +2,8 @@
 title: "Choosing between Dictionary Lookup and Join in PySpark"
 date: "2025-09-21"
 draft: false
+kind: note
+description: "For small mappings in PySpark, a dictionary lookup beats a join."
 ---
 Consider that I have data on budget allocation to eight departments in 1000 hospitals across 30 days. I'm working in PySpark and want to add a new column to the data: if the department is one of `["emergency", "cardiology", "surgery"]`, the column value should be `"critical_care"` and `"other"` otherwise. To create this column, my first instinct was to create a new dataframe containing this mapping between departments and the class (`critical_care` or `other`) and join it with the existing dataframe. But I learnt today that for small lookups, it is faster to perform a dictionary lookup in PySpark instead.
 
@@ -12,4 +14,4 @@ There is a 40-50% improvement in execution time for creating the new column. Thi
 
 Past roughly a few dozen conditions, the generated expression can get large, so a broadcast join is often faster. This is a good rule of thumb to keep in mind.
 
-For further understanding of the data, the operations, and the difference in execution times, please read and execute the associated [Jupyter notebook](https://github.com/tejas-kale/blog/blob/main/notebooks/dict_vs_joins.ipynb).
+For further understanding of the data, the operations, and the difference in execution times, please read and execute the associated [Jupyter notebook](https://github.com/tejas-kale/blog/blob/main/notebooks/lookup_vs_join/dict_vs_joins.ipynb).
