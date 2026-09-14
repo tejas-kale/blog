@@ -31,6 +31,7 @@ Desktop.ini
 *.swp
 *.swo
 *~
+*.code-workspace
 
 # Logs
 *.log
@@ -73,8 +74,11 @@ uv.lock
 .uv-cache/
 pyproject.toml
 
-# Data
-notebooks/data
+# Knit output and local caches
+notebooks/**/*.html
+notebooks/**/*_files/
+.quarto/
+_vendor/
 
 # GitHub Pages specific
 # Note: For GitHub Pages, you typically want to commit source files

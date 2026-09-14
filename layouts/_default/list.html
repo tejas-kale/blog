@@ -1,0 +1,47 @@
+{{- define "main" -}}
+
+{{- if and .Title (eq .Type "tags") -}}
+<h1 class="mb-14">#{{- .Title -}}</h1>
+{{- end -}}
+
+{{- $pages := union .RegularPages .Sections -}}
+{{- if .IsHome -}}
+{{- $pages = where site.RegularPages "Section" "posts" -}}
+{{- end -}}
+
+{{- $paginator := .Paginate $pages -}}
+<ul class="post-list">
+  {{- range $paginator.Pages -}}
+  <li class="post-entry">
+    {{- if .Date -}}
+    <time datetime="{{- .Date.Format `2006-01-02` -}}"
+      >{{- .Date | time.Format ":date_medium" -}}</time
+    >
+    {{- end -}}
+    <div>
+      <h2>
+        <a href="{{- .RelPermalink -}}">{{- .Title -}}</a>
+        {{- if eq .Params.kind "note" -}}
+        <span class="post-kind">Note</span>
+        {{- end -}}
+      </h2>
+      {{- with .Description -}}
+      <p>{{- . -}}</p>
+      {{- end -}}
+    </div>
+  </li>
+  {{- end -}}
+</ul>
+
+{{- if gt $paginator.TotalPages 1 -}}
+<nav class="post-nav">
+  {{- if $paginator.HasPrev -}}
+  <a href="{{- $paginator.Prev.URL -}}">← Previous</a>
+  {{- end -}}
+  {{- if $paginator.HasNext -}}
+  <a class="ltr:ml-auto" href="{{- $paginator.Next.URL -}}">Next →</a>
+  {{- end -}}
+</nav>
+{{- end -}}
+
+{{- end -}}

@@ -170,7 +170,7 @@ p <- ggplot(dak_plot) +
 
 p
 
-out_path <- file.path("..", "static", "charts", "dak-absence-duration.png")
+out_path <- file.path("..", "..", "static", "germany_sick_leaves", "dak-absence-duration.png")
 ggsave(
   out_path, p,
   width = 8.8, height = 5.1, dpi = 160,

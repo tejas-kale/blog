@@ -2,6 +2,7 @@
 title: AI and Developer Productivity
 date: 2026-03-21
 draft: true
+description: "Does more frequent publishing of popular AI packages mean developers got faster?"
 ---
 
 ## Introduction

@@ -2,6 +2,7 @@
 title: Diving into Germany's Sickness Statistics
 date: 2026-09-02
 draft: false
+description: "Germany's 19.5-day sick-leave average is real, but long absences do most of the work."
 ---
 
 BBC More or Less’s recent [podcast episode](https://www.bbc.co.uk/sounds/play/w3ct9995) on the statistic that employees in Germany take roughly 19.5 days of sick leave every year was interesting. It explained that the number comes from the statutory insurer DAK’s [report](https://www.dak.de/dak/unternehmen/reporte-forschung/gesundheitsreport-2026_223108), which counts all calendar days, including weekends, and excludes leave taken for a child’s illness and maternity leave. Given that Germany has 93 statutory health insurers, and that an expert in the episode claimed that the average was skewed by a handful of long-term absences, I wanted to answer two questions:
@@ -13,7 +14,7 @@ To answer the first question, we can look at a similar [report](https://www.tk.d
 
 Unfortunately, neither report publishes the median number of sick days per person per year. However, it is instructive to look at DAK’s data grouped by the duration of each absence. As the chart below shows, absences lasting more than six weeks account for only 2.5% of sick absences but 37.9% of sick days. Conversely, 40.1% of absences last one to three days but account for only 8.3% of sick days.
 
-![Absences lasting 6+ weeks are 2.5% of cases but 37.9% of sick days]({{< relURL "charts/dak-absence-duration.png" >}})
+![Absences lasting 6+ weeks are 2.5% of cases but 37.9% of sick days]({{< relURL "germany_sick_leaves/dak-absence-duration.png" >}})
 
 DAK’s report also states that 37.5% of its members had no recorded medically certified absence. Some may not have been ill at all. Others may have had short illnesses for which they did not obtain a certificate. German employees generally need medical certification when an illness lasts more than three calendar days, although employers can require it earlier. Across DAK’s entire analytical population, there were about two recorded episodes of absence per insured person per year, with a mean duration of 9.8 days per episode.
 
