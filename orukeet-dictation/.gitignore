@@ -1,0 +1,7 @@
+.build/
+dist/
+installation.json
+orukeet-cache/
+*.app
+__pycache__/
+*.pyc
