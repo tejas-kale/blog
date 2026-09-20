@@ -2,7 +2,7 @@
 title: "Set Up VibeVoice on Google Colab"
 date: "2025-09-18"
 draft: false
-kind: note
+note: true
 description: "Getting Microsoft VibeVoice running when a MacBook Air will not."
 ---
 

@@ -34,7 +34,7 @@ title: "..."
 date: "YYYY-MM-DD"
 draft: false
 description: "One line for the homepage. Never omit this; the list does not auto-summarise."
-kind: note   # optional. Lab notes only. Essays omit this field.
+note: true   # optional. Lab notes only. Essays omit this field.
 ```
 
 Link notebooks on GitHub. Do not publish knitted HTML or review tables under `static/`.

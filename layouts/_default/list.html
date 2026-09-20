@@ -21,7 +21,7 @@
     <div>
       <h2>
         <a href="{{- .RelPermalink -}}">{{- .Title -}}</a>
-        {{- if eq .Params.kind "note" -}}
+        {{- if .Params.note -}}
         <span class="post-kind">Note</span>
         {{- end -}}
       </h2>

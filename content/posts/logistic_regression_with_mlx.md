@@ -2,7 +2,7 @@
 title: "Logistic Regression with MLX"
 date: "2025-09-23"
 draft: false
-kind: note
+note: true
 description: "A logistic regression neural net trained on Apple silicon with MLX."
 ---
 The M1 MacBook Air, though not powerful, contains 8 CPU cores and 7-8 GPU cores. These processing units share a unified memory. In order to use the GPUs for training machine learning and deep learning models, one needs to use the [MLX](https://opensource.apple.com/projects/mlx/) framework. As quoted on the website:

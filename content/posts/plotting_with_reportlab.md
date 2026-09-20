@@ -2,7 +2,7 @@
 title: "Creating Data Visualisations with ReportLab"
 date: "2026-03-28"
 draft: false
-kind: note
+note: true
 description: "ReportLab cut PDF chart generation from three minutes to two seconds."
 ---
 
