@@ -47,6 +47,7 @@ oews_plot <- oews |>
 ink <- "#2C2A28"
 teal <- "#3E6D7A"
 muted <- "#6B6560"
+rust <- "#9B4D35"
 
 theme_note <- function() {
   theme_minimal(base_family = "Avenir Next", base_size = 12) +
@@ -97,6 +98,8 @@ ggsave(file.path(notebook_dir, "plots", "data_scientists.png"), p_ds,
        width = 9.2, height = 5.2, dpi = 150)
 
 p_facet <- ggplot(oews_plot, aes(year, employment)) +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, colour = rust,
+              linewidth = 0.55, linetype = "22", na.rm = TRUE) +
   geom_line(colour = teal, linewidth = 0.75) +
   geom_point(colour = teal, size = 1.3, na.rm = TRUE) +
   facet_wrap(~occupation, scales = "free_y", ncol = 3) +
@@ -104,14 +107,15 @@ p_facet <- ggplot(oews_plot, aes(year, employment)) +
   scale_y_continuous(labels = label_number(scale_cut = cut_short_scale())) +
   labs(
     title = "OEWS May employment for The Economist Chart 3 occupations",
-    subtitle = "Gaps are years BLS did not publish a comparable detail code, or pages not retrieved.",
+    subtitle = "Dashed line is a linear fit to published years. Gaps are missing comparable codes.",
     x = NULL,
     y = NULL,
     caption = "BLS Occupational Employment and Wage Statistics, national estimates."
   ) +
   theme_note()
 ggsave(file.path(notebook_dir, "plots", "facet.png"), p_facet,
-       width = 9.5, height = 8.8, dpi = 150)
+       width = 9.5, height = 8.8, dpi = 600, bg = "white",
+       device = ragg::agg_png)
 
 p_change <- change |>
   mutate(occupation = factor(occupation, levels = rev(occupation))) |>
@@ -130,3 +134,50 @@ p_change <- change |>
   theme_note()
 ggsave(file.path(notebook_dir, "plots", "change_2023_2025.png"), p_change,
        width = 9.2, height = 5.6, dpi = 150)
+
+adjacent <- c(
+  "Software developers",
+  "Software QA testers",
+  "Computer research scientists",
+  "Database architects",
+  "Statisticians",
+  "Management analysts",
+  "Project-management specialists",
+  "Fashion designers"
+)
+
+oews_adj <- read_csv("oews_occupations.csv", show_col_types = FALSE) |>
+  filter(occupation %in% adjacent) |>
+  mutate(occupation = factor(occupation, levels = adjacent))
+
+oews_adj_plot <- oews_adj |>
+  complete(occupation, year = min(year):max(year))
+
+change_adj <- oews_adj |>
+  filter(year %in% c(2023, 2025)) |>
+  select(occupation, year, employment) |>
+  pivot_wider(names_from = year, values_from = employment, names_prefix = "y") |>
+  mutate(change_pct = 100 * (y2025 / y2023 - 1)) |>
+  arrange(desc(change_pct))
+
+change_adj
+
+p_adj <- ggplot(oews_adj_plot, aes(year, employment)) +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, colour = rust,
+              linewidth = 0.55, linetype = "22", na.rm = TRUE) +
+  geom_line(colour = teal, linewidth = 0.75) +
+  geom_point(colour = teal, size = 1.3, na.rm = TRUE) +
+  facet_wrap(~occupation, scales = "free_y", ncol = 2) +
+  scale_x_continuous(breaks = c(2000, 2005, 2010, 2015, 2020, 2025)) +
+  scale_y_continuous(labels = label_number(scale_cut = cut_short_scale())) +
+  labs(
+    title = "OEWS May employment for occupations adjacent to Chart 3",
+    subtitle = "Dashed line is a linear fit to published years. Software developers skip 2019–20 (bundled with QA).",
+    x = NULL,
+    y = NULL,
+    caption = "BLS Occupational Employment and Wage Statistics, national estimates. Same extract as Chart 3."
+  ) +
+  theme_note()
+ggsave(file.path(notebook_dir, "plots", "facet_adjacent.png"), p_adj,
+       width = 9.5, height = 9.2, dpi = 600, bg = "white",
+       device = ragg::agg_png)

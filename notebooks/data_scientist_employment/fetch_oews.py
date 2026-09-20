@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a long OEWS panel for the Economist Chart 3 occupations.
+"""Build a long OEWS panel for the Economist Chart 3 occupations and neighbours.
 
 National HTML tables are blocked on bls.gov from this environment, so files
 are read from the Wayback Machine and cached next to this script.
@@ -43,9 +43,47 @@ OCCUPATIONS = [
     {"occupation": "Bookkeeping clerks", "soc": "43-3031", "codes": ("43-3031",)},
     {"occupation": "Customer-service reps", "soc": "43-4051", "codes": ("43-4051",)},
     {"occupation": "Data-entry keyers", "soc": "43-9021", "codes": ("43-9021",)},
+    # Adjacent occupations: not in Chart 3. Software developers sum the
+    # applications + systems-software detail codes that BLS later merged.
+    {
+        "occupation": "Software developers",
+        "soc": "15-1252",
+        "codes": ("15-1252", "15-1132", "15-1133", "15-1031", "15-1032"),
+        "combine": True,
+    },
+    {
+        "occupation": "Software QA testers",
+        "soc": "15-1253",
+        "codes": ("15-1253",),
+    },
+    {
+        "occupation": "Computer research scientists",
+        "soc": "15-1221",
+        "codes": ("15-1221", "15-1111", "15-1011"),
+    },
+    {
+        "occupation": "Database architects",
+        "soc": "15-1243",
+        "codes": ("15-1243",),
+    },
+    {"occupation": "Statisticians", "soc": "15-2041", "codes": ("15-2041",)},
+    {
+        "occupation": "Management analysts",
+        "soc": "13-1111",
+        "codes": ("13-1111",),
+    },
+    {
+        "occupation": "Project-management specialists",
+        "soc": "13-1082",
+        "codes": ("13-1082",),
+    },
+    {"occupation": "Fashion designers", "soc": "27-1022", "codes": ("27-1022",)},
 ]
 
-WANTED = {code for occ in OCCUPATIONS for code in occ["codes"]} | {"15-2098"}
+WANTED = {code for occ in OCCUPATIONS for code in occ["codes"]} | {
+    "15-2098",
+    "15-1256",
+}
 HYBRID_DS = "15-2098"
 
 NAT_URLS = [
@@ -174,9 +212,17 @@ def cache_path(name: str) -> Path:
     return CACHE / name
 
 
+def url_sidecar(name: str) -> Path:
+    if name.endswith(".html"):
+        return cache_path(name[: -len(".html")] + ".url")
+    if name.endswith(".htm"):
+        return cache_path(name[: -len(".htm")] + ".url")
+    return cache_path(name + ".url")
+
+
 def load_cached_or_fetch(name: str, originals: list[str]) -> tuple[str, bytes]:
     html_path = cache_path(name)
-    url_path = cache_path(name.replace(".html", ".url"))
+    url_path = url_sidecar(name)
     if html_path.exists() and html_path.stat().st_size > 5_000:
         source = url_path.read_text().strip() if url_path.exists() else "cache"
         return source, html_path.read_bytes()
@@ -242,6 +288,14 @@ TABLE1_PATTERNS = {
     "Bookkeeping clerks": "Bookkeeping, accounting, and auditing clerks",
     "Customer-service reps": "Customer service representatives",
     "Data-entry keyers": "Data entry keyers",
+    "Software developers": "Software developers",
+    "Software QA testers": "Software quality assurance analysts and testers",
+    "Computer research scientists": "Computer and information research scientists",
+    "Database architects": "Database architects",
+    "Statisticians": "Statisticians",
+    "Management analysts": "Management analysts",
+    "Project-management specialists": "Project management specialists",
+    "Fashion designers": "Fashion designers",
 }
 
 
@@ -254,7 +308,10 @@ def parse_table1(raw: bytes) -> dict[str, int]:
     found: dict[str, int] = {}
     for occupation, pattern in TABLE1_PATTERNS.items():
         escaped = re.sub(r"([.,])", r"\\\1", pattern)
-        match = re.search(rf"(?i){escaped}\.{{3,}}\s*([0-9,]+)", page)
+        # Anchor at the start of the line so a broad-group title that contains
+        # the detail name (e.g. "Logisticians and project management specialists")
+        # is not taken instead of the detail row.
+        match = re.search(rf"(?im)^[ \t]*{escaped}\.{{3,}}\s*([0-9,]+)", page)
         if match:
             found[occupation] = int(match.group(1).replace(",", ""))
     return found
@@ -263,10 +320,19 @@ def parse_table1(raw: bytes) -> dict[str, int]:
 def emit_rows(year: int, source: str, found: dict[str, tuple[str, int]]) -> list[dict]:
     rows = []
     for occ in OCCUPATIONS:
-        match = next(((code, *found[code]) for code in occ["codes"] if code in found), None)
-        if match is None:
+        matches = [
+            (code, found[code][0], found[code][1])
+            for code in occ["codes"]
+            if code in found
+        ]
+        if not matches:
             continue
-        code, title, employment = match
+        if occ.get("combine") and len(matches) > 1:
+            code = "+".join(item[0] for item in matches)
+            title = " + ".join(item[1] for item in matches)
+            employment = sum(item[2] for item in matches)
+        else:
+            code, title, employment = matches[0]
         rows.append(
             {
                 "year": year,
