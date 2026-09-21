@@ -1,0 +1,405 @@
+#+TITLE: What preprocessing does to article narration
+#+OPTIONS: toc:2 num:nil
+#+STARTUP: overview indent inlineimages
+#+PROPERTY: header-args:python :session *tts* :results output replace :exports both :tangle tts_preprocessing.py
+#+PROPERTY: header-args:sh :tangle run-experiment.sh :shebang "#!/bin/sh"
+
+This is the agreed plan for [[https://github.com/tejas-kale/blog/issues/7][issue 7]] and the living notebook for the
+experiment. Implementation adds source blocks, results, and evidence
+beneath the agreed headings; it does not silently change them.
+
+* Status
+
+- Planning status :: ready
+- Delegation gate :: clear once this file is committed and the worktree is clean
+- Plan owner :: Tejas Kale
+- Worktree :: =/Users/tejaskale/Code/blog-tts-preprocessing= on branch =issue-7-tts-preprocessing=
+
+* Aim and intended use
+
+- Question :: Which text-preprocessing stages, applied to a Markdown
+  clipping produced by the =clip= CLI, measurably improve how pleasant
+  the resulting OpenRouter-generated MP3 narration is to listen to —
+  and how does that effect compare with changing TTS model tier?
+- Intended use :: Decide which preprocessing stages earn their place in
+  the =narrate= CLI planned in issue 7, and supply before/after audio
+  examples for the blog post that issue 7 describes.
+- Audience :: Tejas now; blog readers later.
+- Population :: Long-form English articles saved as Obsidian-style
+  Markdown clippings by the =clip= CLI.
+- Decision informed :: Which preprocessing stages =narrate= implements,
+  and which OpenRouter model it defaults to.
+- This analysis cannot support :: Any general claim about listener
+  preference (one listener), any statistical claim (two articles), any
+  claim about non-English text, about TTS models outside OpenRouter, or
+  about whether a pronunciation lexicon helps in general as opposed to
+  fixing the specific errors it was built from.
+
+* Risk tier
+
+- Tier :: exploratory
+- Reason :: Nothing downstream is expensive to undo. The result steers a
+  personal CLI and a blog post, and every conclusion can be re-checked
+  by relistening. Reproducible retrieval and plausibility checks remain
+  compulsory; reconciliation and sensitivity analysis do not.
+
+* Data Understanding Record
+
+| Item | Settled meaning or value | Evidence |
+|------+--------------------------+----------|
+| Source and retrieval | Two Markdown clippings produced by the =clip= CLI, read from =~/Documents/Cowork Root/00_Resources/Clippings/=. Copied verbatim into =inputs/= in this directory at the start of the run, with SHA-256 recorded. | =inputs/manifest.csv=; the =clip= CLI is the retrieval method and is not re-run. |
+| Population and unit of observation | Unit is one *render*: the tuple (article, passage, condition, model, chunk size). 27 renders in total. | Design table under "Method". |
+| Grain, keys, and cardinality | Key is (article, passage, condition, model, chunk_size). Expected cardinality 27, no duplicates. | Assertion in the manifest block. |
+| Fields and metrics | Per render: input character count, chunk count, output duration, integrated loudness per chunk (LUFS), seam loudness delta, ASR word-error rate against input, cost in USD, OpenRouter =X-Generation-Id=, HTTP status. Per render per rater pass: six rubric scores. | =renders.csv=, =scores.csv= |
+| Time semantics and window | Not applicable. The inputs are static text. Retrieval date 2026-09-21. The Caravan article was published 2012-03-01, the Pragmatic Engineer article 2026-09-15; neither is time-sensitive to the question. | Clipping front matter. |
+| Nulls, sentinels, duplicates, and late data | The failure modes are HTTP errors, silent truncation of long input, and empty audio. Every render records status and byte count; zero-byte or short-duration outputs are treated as failures and re-run once, then reported. | Per-render assertions. |
+| Filters, exclusions, and join loss | Text removed by preprocessing *is the treatment*, not incidental loss. Every stage records a unified diff of the text before and after, so nothing is dropped unexamined. | =diffs/= directory, reviewed by hand (see Review Map). |
+| Freshness, coverage, and bias | Two articles, one listener, English only. The two articles were chosen deliberately to span structural density and linguistic density, not sampled. Known bias: the listener knows the hypothesis, which is why scoring is blind. | Stated here as a limit. |
+| Reconciliation or plausibility check | Two independent checks: (a) characters sent, summed from the manifest, reconciled against OpenRouter's reported usage for the session; (b) Whisper transcript of each render diffed against the exact text sent. | Verification Contract rows 1 and 7. |
+
+** The two articles
+
+| File | Words | Characters | Headings | Blockquote lines | Images | Links | Role |
+|------+-------+------------+----------+------------------+--------+-------+------|
+| =Inside OpenAI's agentic software factory.md= | 7,838 | 48,915 | 27 | 56 | 5 | 17 | Structural rungs |
+| =The rise of Narendra Modi.md= | 18,011 | 107,711 | 0 | 0 | 16 | 16 | Linguistic rungs |
+
+Both carry Obsidian front matter with =title=, =source=, =author= (as a
+=[[wikilink]]=), =published=, =created=, =description=, and =tags=.
+
+The Pragmatic Engineer piece is chrome-dense: numbered section
+headings, long attributed pull-quotes, and genuine newsletter debris
+("The bottom of this article could be cut off in some email clients",
+followed by a bare "Read the full article online" link).
+
+The Caravan piece is unbroken prose with no headings at all, studded
+with Gujarati and Indian proper nouns (Gandhinagar, /Vikaas Purush/,
+Kanji Malam, Jamshyd Godrej, Azim Premji, Marathwada), mixed currency
+(=$450 billion=, =Rs 20 billion ($409 million)=), percentages, and
+full-caps section lead-ins such as *ON THE AFTERNOON OF 22 APRIL 1498*
+that many synthesisers spell out letter by letter.
+
+** OpenRouter API details
+
+- Endpoint :: =POST https://openrouter.ai/api/v1/audio/speech=, OpenAI-compatible.
+- Request fields :: =model=, =input=, =voice=, =response_format= (=mp3= or =pcm=, defaults to =pcm=), =speed=.
+- Response :: raw audio bytes, =Content-Type: audio/mpeg= for MP3, with an =X-Generation-Id= header. Not JSON.
+- Discovery :: =GET /api/v1/models?output_modalities=speech=. Note that the
+  unfiltered =/api/v1/models= listing *omits speech models entirely*; filtering
+  is required.
+- Credentials :: =OPENROUTER_API_KEY=, already present in the shell environment. Never written to this file or to any committed artefact.
+- Retrieval date for the pricing and voice lists below :: 2026-09-22.
+
+| Model | Role | USD per million characters | Voice used |
+|-------+------+----------------------------+------------|
+| =microsoft/mai-voice-2= | Premium | 22 | =en-US-Harper:MAI-Voice-2= |
+| =microsoft/mai-voice-2-flash= | Same family, cheaper tier | 15 | =en-US-Harper:MAI-Voice-2= |
+| =deepgram/flux-tts:free= | Free | 0 | chosen by audition from 36 English voices (see Probe) |
+
+These are text-to-speech endpoints, not audio chat models, so the
+output is verbatim by construction. Neither MAI-Voice-2 nor Deepgram
+Flux publishes a maximum input length; establishing it is the first
+task of implementation.
+
+* Method and assumptions
+
+- Method class :: Experiment analysis — a within-subject cumulative
+  ablation with a single rater, reported descriptively.
+- Method :: Preprocessing is a staircase of five cumulative stages.
+  Each article is rendered at the stages that bite hardest on it, under
+  three models, and scored blind.
+
+** Preprocessing stages
+
+Stages are cumulative and applied in this order.
+
+| Stage | Name | What it does |
+|-------+------+--------------|
+| P0 | none | The clipping exactly as =clip= wrote it, front matter included. |
+| P1 | preamble | Front matter becomes a spoken opening: title, author with =[[...]]= stripped, publication date, then a pause. =tags=, =created=, and =source= are dropped. |
+| P2 | structural strip | Drop =![](images/...)= references. Markdown links become their link text; the URL is dropped. Remove newsletter chrome. Headings are spoken with a pause, not as bare fragments. Blockquotes get an attribution cue so the narrator does not appear to contradict himself. |
+| P3 | normalisation | NFC normalise. Smart quotes to ASCII, em and en dashes to clause breaks, ellipsis to a full stop, non-breaking space to space. Strip zero-width and control characters. |
+| P4 | spoken forms | Expand numbers, currencies, percentages, dates, and ranges to spoken form. Handle full-caps lead-ins so they are read as words, not spelled out. |
+| P5 | respelling | Apply a term-to-respelling table (for example =Vikaas Purush= to =Vee-kaas Poo-roosh=). Neither model documents SSML or phoneme tags, so a "pronunciation lexicon" here is a plain substitution table. |
+
+** Render design
+
+Chunk size is held fixed at *paragraph-grouped chunks of about 400
+words, never splitting mid-sentence*, for every render in the ablation,
+so that chunk-seam artefacts do not confound the text comparison. Chunk
+size gets its own small comparison at the end.
+
+| Passage | Conditions | Models | Renders |
+|---------+------------+--------+---------|
+| OpenAI excerpt (~400 words) | P0, P2, P3, P5 | all three | 12 |
+| Modi excerpt (~400 words) | P0, P3, P4, P5 | all three | 12 |
+| OpenAI article, in full, at P5 | P5 | =mai-voice-2= only | 1 |
+| OpenAI 1,600-word passage at P5 | 400-word chunks vs 1,200-word chunks | =mai-voice-2= only | 2 |
+
+Twenty-seven renders. Roughly 36 minutes of excerpt listening, plus the
+50-minute full article, which is the artefact to actually listen to on
+the move rather than material to score.
+
+** The excerpts
+
+Both were chosen before any audio was generated. Exact start and end
+strings are recorded in =config.py= so extraction is reproducible.
+
+- *OpenAI, structural.* From "Today, we cover:" through the end of
+  Andrew Ambrosino's pull-quote and the token-usage image reference.
+  Contains the bulleted summary, the italic scheduling aside, the
+  "could be cut off in some email clients" warning, a bare "Read the
+  full article online" link, the =## 1. Codex takes over at OpenAI=
+  heading, a multi-paragraph attributed blockquote, and an image
+  reference.
+- *Modi, linguistic.* From "IN THE SECOND WEEK OF JANUARY 2011" through
+  the "Rs 20 billion ($409 million)" sentence. Contains the full-caps
+  date lead-in, =$450 billion=, =$920 billion=, =60 percent=, =25
+  percent=, =Rs 20 billion ($409 million)=, and a dense run of proper
+  nouns.
+
+** Scoring
+
+Each excerpt render is scored on six named failure modes, each on a
+0–3 scale where 0 is "not present" and 3 is "ruins the listen":
+
+1. Gibberish or garbled words.
+2. Mispronounced names, places, or acronyms.
+3. Numbers, dates, or currency read wrongly.
+4. Chrome read aloud that should not have been.
+5. Volume or pace discontinuity at a chunk seam.
+6. Unnatural pauses or run-on sentences.
+
+Playback order is randomised with a recorded seed and labels are hidden
+until scoring is complete.
+
+** Assumptions
+
+- One listener, so scores are a preference record, not an estimate of
+  anything.
+- Because the staircase is cumulative, each stage's effect is
+  conditional on the stages before it and is not separable from them.
+- The P5 respelling table is *derived from listening to the P0 and P3
+  baselines*. Its improvement is therefore fitted to errors already
+  observed. It shows that the fix worked, not that lexicons help in
+  general.
+- The Deepgram leg changes vendor and voice at once. MAI-Voice-2
+  against MAI-Voice-2-Flash is the clean model-tier comparison;
+  Deepgram is a separate "is free good enough" question.
+- The =/audio/speech= endpoint has no seed parameter, so synthesis is
+  non-deterministic and two renders of identical text may differ.
+
+** Limits
+
+Two articles, one listener, English only, no inter-rater reliability,
+no statistical test, and no claim of generalisation beyond these two
+pieces.
+
+* Decision Ledger
+
+| Decision | Reason | Alternatives rejected | Consequence |
+|----------+--------+-----------------------+-------------|
+| OpenRouter only; no local model | VibeVoice on this M1 Air took an estimated three hours for 100 words (see =content/posts/vibevoice_on_colab.md=) | Kokoro, Piper, mlx-audio locally | No offline path; the experiment depends on network and a funded account |
+| Three models rather than two | Flash against full isolates model tier with voice held constant; Deepgram adds the free leg | Two models | 50% more listening for a cleaner tier comparison |
+| =deepgram/flux-tts:free= as the free leg | Issue 7's thesis is that preprocessing beats model choice; cleaned text on a free model beating raw text on the $22 model is the sharpest evidence for it | =mai-voice-2-flash= alone as "cheap" (only 32% cheaper, not a real cost decision) | Vendor and voice change together on that leg |
+| Cumulative staircase, split by rung type across the two articles | Every stage is tested where it actually bites, at 8 renders per model rather than 12 | Full staircase on both articles | A stage's effect on the article it was not run against is unmeasured |
+| Chunk size held fixed during the ablation | Seam artefacts are a model property and would confound text cleanup | Chunking as a rung of the staircase | Chunking gets a separate two-render comparison instead |
+| Excerpts fixed before any audio exists | Prevents choosing the passage that flatters the result | Picking after listening | The excerpts may be unrepresentative of the rest of the article |
+| Blind randomised scoring | The rater knows the hypothesis | Open scoring | Roughly ten lines of extra code |
+| Respelling table rather than SSML or phonemes | Neither model documents phoneme or SSML support | Phoneme markup | The "lexicon" is a substitution table, and is model-agnostic as a result |
+| Spoken preamble from front matter | Keeps track of which article is playing when several MP3s are queued | Stripping front matter wholesale | One more thing the pipeline can get wrong |
+| Audio gitignored, manifest committed | 27 renders are tens of megabytes of binary | Committing the audio | Results are reviewable without the audio; the audio must be regenerated to re-listen |
+
+* Verification Contract
+
+| Claim | Evidence | Acceptance rule | Independence | Human action |
+|-------+----------+-----------------+--------------+--------------|
+| The audio is verbatim: nothing dropped, nothing invented | Whisper transcript of each render, diffed against the exact text sent | Word error rate below 2% after allowing for P4 expansions | Whisper is a different model family and shares no code with the preprocessing pipeline | Read every diff that exceeds the threshold |
+| Each render corresponds to the text its condition produced | SHA-256 of the input text stored in =renders.csv= at render time, recomputed from the pipeline afterwards | Exact match on all 27 renders | Hash recomputed by a separate pass, not by the render path | None unless a mismatch appears |
+| Structural stripping removes chrome and only chrome | A hand-written 20-line Markdown micro-fixture with expected output, plus the full P0-to-P2 unified diff for both articles | Fixture matches exactly; the diff contains no body prose | Fixture expectations hand-written before implementation | Read both P0-to-P2 diffs end to end |
+| Spoken-form expansion is correct | Micro-fixture of about 25 input-to-expected pairs taken from the actual articles (=$450 billion=, =Rs 20 billion=, =25 percent=, =22 April 1498=, =2019–2023=, =10,000=) | All pairs pass | Expected values hand-written before the expander | Review the fixture table itself; a wrong expectation silently passes |
+| Volume and prosody are stable across chunk seams | Per-chunk integrated loudness via =ffmpeg ebur128=, and the loudness delta either side of every seam | No seam delta above 3 LU | Measured from the rendered audio, not from the code that made it | Listen to the three largest seam deltas |
+| Condition X sounds better than condition Y | Blind randomised rubric scores | None — this is a judgement, reported as a score sheet with the blinding seed | Blinding | The scoring itself |
+| Spend stayed under the ceiling | Cost column of =renders.csv=, summed | Within 5% of OpenRouter's reported usage for the session, and below $10 | OpenRouter's own accounting is independent of the local estimate | Check the OpenRouter dashboard once at the end |
+
+* Human review boundary
+
+** Claim-critical logic
+
+Every preprocessing stage (P1 through P5), the chunker, excerpt
+extraction, the blinding and randomisation, score aggregation, and the
+manifest hashing.
+
+** Human-review-critical logic
+
+These can produce plausible but wrong output without looking broken:
+
+- *Structural strip (P2).* A greedy chrome regex can eat body prose and
+  the result still sounds like a well-formed article. The only real
+  oracle is reading the diff.
+- *Spoken-form expansion (P4).* "1498" read as "one thousand four
+  hundred and ninety-eight" instead of "fourteen ninety-eight" is
+  wrong, fluent, and invisible to any automated check.
+- *The respelling table (P5).* Subjective, and capable of making
+  pronunciation worse.
+- *Excerpt extraction.* A silently wrong excerpt invalidates every
+  downstream comparison while everything continues to run.
+- *The score sheet and its interpretation.*
+
+** Logic excluded from human review
+
+| Component | Plausible failure | Independent oracle | Fault probe | Runs in the workflow |
+|-----------+-------------------+--------------------+-------------+----------------------|
+| OpenRouter client | Wrong model or voice sent; request silently fails | Response headers record the model; =X-Generation-Id= and HTTP status stored per render | Test asserting a non-200 raises rather than writing a file | =verify.sh= |
+| MP3 writing | Zero-byte or truncated file | File size and =ffprobe= duration against expected words-per-minute | Test with a truncated byte stream | =verify.sh= |
+| Loudness measurement | Wrapper misparses =ebur128= output | Known-loudness fixture WAV generated by =ffmpeg= at a set level | Test asserting the parsed LUFS matches the generated level | =verify.sh= |
+| Manifest CSV writer | Dropped or misaligned row | Row count asserted equal to render count; key uniqueness asserted | Test writing a duplicate key | =verify.sh= |
+| =afplay= Org link | Does not play | Immediately obvious to the user | None | Not applicable |
+
+All four failures above are loud: they raise, or they produce a file
+whose size or duration assertion fails.
+
+* Review Map
+
+| Question | Org heading or block | Evidence or test | Expected invariant | Consequence if wrong |
+|----------+----------------------+------------------+--------------------+----------------------|
+| Are these the right two articles, and did they load unchanged? | Data Understanding Record | =inputs/manifest.csv= SHA-256 | Hashes match the source clippings | The whole experiment is about different text than intended |
+| Is the excerpt the passage the plan named? | The excerpts | =diffs/excerpt-*.txt= | Start and end strings match the plan exactly | Every comparison is silently invalid |
+| Did the structural strip remove only chrome? | Preprocessing stages, P2 | =diffs/P0-to-P2-*.diff= and the micro-fixture | No body prose in the removal side of the diff | Missing paragraphs sound like a coherent but different article |
+| Are the expanded spoken forms correct? | Preprocessing stages, P4 | Expansion fixture table | All 25 hand-written pairs pass | Fluent, wrong numbers and dates throughout |
+| Is the respelling table an improvement? | Preprocessing stages, P5 | Blind rubric item 2 | P5 scores no worse than P4 on mispronunciation | A "fix" that makes pronunciation worse |
+| Did the models read the text verbatim? | Verification Contract, row 1 | Whisper diff per render | Word error rate under 2% | Conclusions drawn from audio that omits content |
+| Do chunk seams jump in volume? | Render design, chunk comparison | =ebur128= seam deltas | No delta above 3 LU | The seam problem is misattributed to preprocessing |
+| Does preprocessing or model tier matter more? | Results | Score sheet across three models | Stated as a comparison with the blinding seed recorded | The post's central claim is unsupported |
+| Did the run stay inside budget? | Verification Contract, row 7 | =renders.csv= cost column | Under $10, within 5% of the dashboard | Silent overspend |
+
+* Reproducible execution
+
+- Environment and dependencies :: Reuse the existing
+  =/Users/tejaskale/Code/blog/.venv= (Python 3.11.6, created by =uv=).
+  Install what this experiment adds with =uv pip install --python
+  /Users/tejaskale/Code/blog/.venv/bin/python <packages>=. Because
+  =.gitignore= excludes =pyproject.toml=, =uv.lock=, and =.venv/=, this
+  repository keeps no committed dependency record; a source block in
+  this file prints the resolved versions of the packages the experiment
+  adds, and *its output is committed* so a future reader can
+  reconstruct the environment. =ffmpeg= and =afplay= are already on
+  =PATH=; =mpv= is not and is not used.
+- Tangle and run :: =C-c C-v t= in Emacs, or =emacs --batch -l org
+  --eval '(org-babel-tangle-file "tts_preprocessing.org")'=. Then
+  =./run-experiment.sh=. The tangled =tts_preprocessing.py= is
+  *generated*: never edit it directly, and =run-experiment.sh= re-tangles
+  and fails on drift before running anything.
+- Parameters and date ranges :: Models, voices, chunk size (400 words),
+  the large chunk size for the comparison (1,200 words), excerpt start
+  and end strings, and the spend ceiling ($10) all live in one
+  parameter block. No date ranges: the inputs are static.
+- Randomness :: The blinding order is seeded and the seed is recorded in
+  =scores.csv=. Synthesis itself is non-deterministic — =/audio/speech=
+  exposes no seed — so identical text may render differently on
+  repeat. This is stated, not controlled.
+- Generated artefacts :: =tts_preprocessing.py= and =run-experiment.sh=
+  (tangled, generated, committed); =audio/= (gitignored);
+  =diffs/= (committed); =inputs/= (committed); =renders.csv=,
+  =scores.csv=, and =lexicon.csv= (committed).
+- Verification command :: =./verify.sh=, which runs the micro-fixture
+  tests, the Whisper diff, the loudness checks, the hash recomputation,
+  and the tangle drift check.
+
+** Expected cost
+
+| Item | Characters | Model | USD |
+|------+------------+-------+-----|
+| 8 excerpt renders | 20,000 | =mai-voice-2= | 0.44 |
+| 8 excerpt renders | 20,000 | =mai-voice-2-flash= | 0.30 |
+| 8 excerpt renders | 20,000 | =deepgram/flux-tts:free= | 0.00 |
+| Full OpenAI article at P5 | ~45,000 | =mai-voice-2= | 0.99 |
+| Chunk-size comparison, two renders | ~20,000 | =mai-voice-2= | 0.44 |
+| *Total* | | | *~2.17* |
+
+The run aborts at $10 rather than trusting this estimate.
+
+* Probe: the first task of implementation
+
+Before any pipeline code is written, settle these four things and stop
+to report:
+
+1. *Maximum input length* for =mai-voice-2=, =mai-voice-2-flash=, and
+   =deepgram/flux-tts:free=. Neither publishes one. Bisect with 2,000,
+   5,000, 10,000, and 20,000 characters and record where each errors or
+   truncates. Set the working chunk size well below the lowest ceiling.
+2. *Deepgram voice audition.* Synthesise one fixed sentence across five
+   or six Flux voices, listen, and pin the closest match to
+   =en-US-Harper=. Record the choice and the reason.
+3. *End-to-end MP3.* One render written to disk, played through
+   =afplay=, confirming =response_format: "mp3"= returns =audio/mpeg=.
+4. *Billing reconciliation.* Confirm that characters sent match what
+   OpenRouter bills, so the cost column can be trusted.
+
+Stop and report if any of these surprises you, rather than adapting the
+design silently.
+
+* Return Contract
+
+** Required from the implementing agent
+
+- The implemented outcome.
+- Data version or retrieval evidence: SHA-256 of both clippings, and
+  the =X-Generation-Id= of every render.
+- Checks run and their results.
+- Unresolved or changed assumptions.
+- The completed Review Map.
+- Locations of the human-review-critical Org blocks.
+- Generated artefacts and the tangle drift check.
+- Claims it cannot verify for the user — in particular, every
+  subjective judgement, which only the listener can make.
+- The Git review baseline (=git rev-parse HEAD= captured before the
+  first implementation change) and the final commit SHA.
+
+** Implementation results
+
+To be completed by the implementing agent without silently changing the
+agreed plan above.
+
+* Unknowns and out of scope
+
+** Blocking unknowns
+
+None.
+
+** Bounded unknowns
+
+| Unknown | Bound | Risk | Planned check | Owner |
+|---------+-------+------+---------------+-------|
+| Maximum input characters per request for the three models | Between 2,000 and 20,000; bisected in the probe | A wrong chunk size adds seams or triggers truncation | Probe task 1 | Implementing agent |
+| Deepgram free-tier rate limits | Unknown; 24 excerpt renders is a small load | Throttling stalls the run | Catch 429 and back off; report if hit | Implementing agent |
+| The P5 respelling table is derived from baseline listening | Its improvement is fitted to errors already observed | Over-claiming that "a pronunciation lexicon helps" | Report as "these specific fixes worked"; the post must not generalise | Tejas |
+| The Deepgram leg changes vendor and voice together | Reported as a vendor-plus-voice difference, never as model tier | Attributing a voice preference to model quality | MAI Flash against MAI full carries the tier claim instead | Tejas |
+| One listener, two articles | No generalisation claimed anywhere | The post reads as more general than the evidence | Stated in "This analysis cannot support" | Tejas |
+| Synthesis is non-deterministic | Two renders of identical text may differ | A score difference could be run-to-run noise | Re-render and re-score the closest-scoring pair if any comparison hinges on a one-point gap | Tejas |
+| Whether the excerpts represent the rest of the articles | Excerpts fixed before any audio existed | The staircase result may not hold over the full article | The full-article render at P5 is the end-to-end sanity check | Tejas |
+
+** Deferred choices and out of scope
+
+- The =narrate= CLI itself, its publish flow, and its cache directory.
+- EMMS or a full Doom listening queue. Only the =afplay= Org link is in
+  scope, following the pattern already in =config.el= line 1278.
+- Any local or on-device model.
+- Non-English articles and multi-speaker rendering.
+- SSML and phoneme control, unavailable on the chosen models.
+- The blog post prose. This experiment produces its evidence, not its
+  text.
+- Committing =pyproject.toml=, which is a repository-wide decision.
+
+* Next action
+
+The plan is =ready=. Commit this file, confirm the worktree is clean,
+then invoke =/to-spec= — in this conversation, or in a later one after
+telling the agent to read this file in full and treat it as agreed
+context.
+
+The implementing agent must capture =git rev-parse HEAD= before its
+first change and record it as the review baseline. Afterwards, run
+=/code-review= against that baseline using this file as the
+specification, then work the Review Map and perform the human actions
+in the Verification Contract.
