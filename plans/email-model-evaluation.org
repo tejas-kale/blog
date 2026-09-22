@@ -1,0 +1,445 @@
+#+title: Private email typed-decision model evaluation
+#+author: Tejas Kale
+#+startup: overview
+#+property: header-args :eval never-export :results replace
+
+* Status
+
+- Planning status :: ready
+- Delegation gate :: clear
+- Plan owner :: Tejas Kale
+- Planning branch :: =plan/email-model-evaluation=
+- Planning baseline :: =origin/main= at =bb4f6b6=
+- Authoritative plan :: This Org file is the authority for the experiment, its generated implementation, the analysis, and the publication gates. An implementing agent must record any proposed change in the Implementation results section instead of silently changing this plan.
+
+* Aim and intended use
+
+- Question :: How well do pinned releases of Kev 0.8B, Kev 4B, and Laya reproduce the owner's personal email Triage Action and Reply Requirement decisions on a frozen sample from the Target Inbox Population?
+- Intended use :: Produce a transparent personal case study, decide whether any model merits more data collection or fine-tuning, and decide whether the Simulated Action Policy provides enough evidence to consider a separate limited automation trial.
+- Audience :: Technically literate readers who may be new to typed-decision models, probability scoring, selective prediction, and small-sample evaluation.
+- Population :: Eligible inbound Gmail messages received from 1 January 2026 00:00 Europe/Berlin through a recorded extraction freeze time in 2026. Include newsletters, receipts, notifications, and personal mail regardless of current read or archive state. Exclude spam, trash, drafts, sent mail, and messages from any of the owner's aliases.
+- Decision informed :: Continue experimenting, collect more labels, fine-tune a model, abandon the approach, or design a separately reviewed limited automation trial.
+- This analysis cannot support :: Claims about other users, other inboxes, future distribution shifts, production safety, autonomous deletion, general benchmark superiority, or target-domain probability calibration beyond what the small descriptive sample shows.
+
+* Risk tier
+
+- Tier :: production-or-external
+- Reason :: The work processes sensitive personal email, creates cloud infrastructure, configures a live Gmail client, and supports a public blog post. The evaluation itself is read-only and must never mutate Gmail.
+
+* Data Understanding Record
+
+| Item | Settled meaning or value | Evidence |
+|------+--------------------------+----------|
+| Source and retrieval | A continuing Gmail-to-Maildir mirror created by mbsync and indexed by mu is the Live Mail Store. The selected raw messages and eligible earlier thread context are copied into a separate Frozen Email Corpus before inference. | [[file:../findings/gmail-retrieval-for-email-evaluation.md][Gmail retrieval inquiry]] |
+| Population and unit of observation | The Target Inbox Population is eligible inbound mail from 1 January 2026 through the extraction freeze time. The unit is one Evaluated Email: at most the latest eligible inbound message from each conversation thread, with only context available at its arrival. | Confirmed design and [[file:../CONTEXT.md][domain language]] |
+| Grain, keys, and cardinality | One public row per Evaluation ID, one private mapping per selected Gmail message/thread, and one result per Evaluation ID, model revision, question, and request variant. Message-ID or Gmail IDs are used privately to deduplicate; they never enter tracked artefacts. | Confirmed design |
+| Fields and metrics | The Reference Decision table contains Triage Action, Reply Requirement, uncertainty flags, repeat-label fields, eligibility fields, and no message content. Model results contain complete probability distributions, answers, revision and request hashes, timings, failures, and robustness variant identifiers. | Confirmed design |
+| Time semantics and window | Use Gmail/IMAP internal arrival time preserved by =CopyArrivalDate yes=. Interpret boundaries in Europe/Berlin. Compare the =Date= header and investigate material mismatches. Freeze time is recorded to the second. | Confirmed design |
+| Nulls, sentinels, duplicates, and late data | Missing/invalid metadata is explicit. Encrypted or attachment-only messages are Unsupported Inputs rather than silently dropped. Deduplicate across Gmail labels by stable private identifiers. Messages arriving after the freeze time are outside this run. | Confirmed design |
+| Filters, exclusions, and join loss | Exclude spam, trash, drafts, sent mail, and mail from owner aliases. Exclude later replies and later mailbox actions from the Canonical Email State. Every loss between census, sampling, freezing, canonicalisation, labelling, inference, and scoring receives a reason and count. | Confirmed design |
+| Freshness, coverage, and bias | The study describes the owner's 2026 year-to-date mail only. Unsupported Inputs remain in the denominator for end-to-end Coverage. Current mailbox state can bias retrospective reconstruction and must be disclosed. | Confirmed design |
+| Reconciliation or plausibility check | Reconcile an independent mu census against a direct Maildir-header census. Reconcile counts and hashes at every pipeline boundary. Investigate, explain, and record every difference before inference. | Confirmed design |
+
+** Gmail and local mail configuration
+
+1. Configure the account in a new feature branch of the active =~/.config/doom= repository. Record the starting branch and commit before editing and the final commit in the Return Contract. Doom reads this active checkout, so it does not use a second worktree.
+2. Enable the literate Doom mu4e module with the agreed Gmail, Org, and mbsync flags. The persistent Doom =config.org= remains authoritative for mail-client configuration and is linked from this analysis; do not duplicate its secrets or full configuration here.
+3. Configure mbsync initially for manual, pull-only synchronisation of INBOX, All Mail, Sent, Drafts, and Trash. Exclude Spam and custom labels initially. Add selected custom labels only after the base mapping is verified.
+4. Use a personally owned Google desktop OAuth client, the =https://mail.google.com/= scope, =oama= for refresh-token handling, and macOS Keychain. Never put client secrets, refresh tokens, access tokens, app passwords, or the account address in Git, Org results, process listings, or logs.
+5. Run a receive-only compatibility gate using stock mbsync's =OAUTHBEARER= mechanism and =PassCmd= without network-debug output. If that gate fails, use one dedicated, revocable Gmail app password stored in macOS Keychain. Do not install an unofficial isync build as part of this experiment.
+6. After pull-only reading works, test flag, archive, and folder propagation with synthetic messages. Only then enable bidirectional read/archive synchronisation and a five-minute mu4e-triggered mbsync interval. Keep permanent deletion disabled.
+7. Send through =msmtp= using =oama= token output when supported, with the same Keychain-held app-password fallback. Require a successful send-to-self test before ordinary replies.
+8. Add a read-only mu4e action that builds the same Canonical Email State, invokes the same model adapters sequentially, and displays probabilities and the Simulated Action Policy in a separate buffer. It must not apply the result to Gmail.
+
+See [[file:../findings/gmail-oauth-for-mbsync.md][the Gmail OAuth inquiry]] for the evidence and bounded receive-side compatibility risk.
+
+** Private storage boundary
+
+Use a mode-0700 directory outside every Git repository, by default =~/Library/Application Support/email-model-evaluation/=. Its layout is conceptually:
+
+#+begin_example
+email-model-evaluation/
+  raw/                 frozen RFC messages and permitted thread context
+  canonical/           deterministic model inputs
+  manifest/            private ID, source ID, sampling, and hash mappings
+  results/             per-email model distributions and run metadata
+  cache/               revision-plus-request-hash exact-result cache
+  credentials/         only references to Keychain entries, never secret values
+#+end_example
+
+The implementation must refuse to use a path inside the blog or Doom repositories. It must verify owner-only permissions before writing. Tracked artefacts may contain opaque Evaluation IDs, Reference Decisions, flags, aggregate results, non-sensitive environment metadata, and human-review evidence, but no sender, recipient, subject, body, message identifier, raw hash per message, credential, or per-email probability vector.
+
+** Eligibility, census, and sampling
+
+1. Record retrieval start, retrieval end, freeze time, account alias list location, selected Maildir folders, tool versions, and configuration hashes in the Private Manifest.
+2. Build two independent eligible-message censuses: one through mu and one by parsing Maildir headers. The second path must not import selection results from the first.
+3. Reconstruct thread membership with Gmail identifiers when available and a documented conservative fallback when they are absent. At most one Evaluated Email, the latest eligible inbound message, may represent a thread.
+4. Reconstruct only evidence available at the selected message's arrival. Exclude later replies, later messages, and current mailbox actions that reveal the eventual decision.
+5. Assign each eligible thread an opaque Evaluation ID and a keyed-hash Sampling Order. Keep the secret key and source mapping private. Freeze the first 200 selected records after eligibility review and before any model prediction is inspected.
+6. After Reference Decisions are complete but before inference, count each Triage Action and Reply Requirement outcome. Expand to the first 300 records when either task has fewer than 20 examples of any outcome at 200. If fewer than 300 eligible threads exist, use all eligible threads and report the resulting precision limits.
+7. Treat 100 records as the pilot checkpoint only. Do not report it as the final comparison unless the population itself contains no more eligible records.
+
+See [[file:../findings/email-evaluation-sample-size.md][the sample-size inquiry]] and its [[file:../findings/email-evaluation-sample-size.ipynb][executable notebook]].
+
+** Canonical Email State
+
+The canonicaliser must be deterministic and independent of the model adapter:
+
+- Prefer =text/plain=; otherwise convert sanitised HTML to text.
+- Never fetch remote images, tracking pixels, linked pages, or attachments.
+- Remove repeated quoted text and signatures under documented rules while preserving the original raw bytes privately.
+- Include approved, normalised metadata, the current inbound message, and as much recent earlier thread text as fits every model.
+- Use one predeclared head-tail truncation rule when the current message alone is too long. Record every truncation and model-specific token count. No adapter may silently truncate.
+- Produce raw-message, canonical-state, and request hashes in the Private Manifest. Every model must receive byte-identical canonical state for the primary comparison; only its serialisation envelope may differ.
+- Mark encrypted, corrupt, or attachment-only content as Unsupported Input when the text conversion lacks the evidence required for either task.
+
+** Reference Decision table
+
+The tracked Org table contains one row per Evaluation ID and these non-sensitive columns:
+
+| Column | Allowed value or meaning |
+|--------+--------------------------|
+| Evaluation ID | Opaque stable identifier |
+| Included | =yes= or a declared exclusion reason |
+| Triage Action | =keep unread=, =mark read=, =archive=, or =uncertain= |
+| Reply Requirement | =yes=, =no=, or =uncertain= |
+| Triage uncertainty note | Non-sensitive rubric reason code only |
+| Reply uncertainty note | Non-sensitive rubric reason code only |
+| Unsupported Input | =yes/no= plus reason code |
+| Repeat-labelling stratum | =selected/not selected=, assigned before first labels are exposed for review |
+| Repeat Triage Action | Hidden until the repeat pass is complete |
+| Repeat Reply Requirement | Hidden until the repeat pass is complete |
+| Adjudication state | =not needed=, =resolved=, or =persistently uncertain= |
+
+The owner labels before any prediction is run or inspected. Blindly repeat-label a fixed 20% after at least seven days. Calculate exact agreement separately for Triage Action and Reply Requirement; require at least 90% for each. If either fails, refine the written rubric without looking at model results and relabel the complete selected set. Persistently Uncertain Decisions remain in the population, are excluded from reference-dependent primary scoring for that task, reduce labellable coverage, and enter a sensitivity analysis using each plausible label.
+
+* Method and assumptions
+
+- Method class :: Paired, descriptive, retrospective evaluation of three fixed typed-decision models on one personal inbox, with a predeclared selective-action simulation.
+- Method :: Every supported Evaluated Email is scored by every pinned model on the two tasks. Primary probability scores and paired differences are calculated on the same task-evaluable records. Robustness variants test option order, question packing, repeated requests, and probability rounding without changing the primary canonical request.
+- Assumptions :: The keyed-hash sample adequately represents the defined Target Inbox Population; one email per thread removes the largest dependence; Reference Decisions are stable enough after the repeat-label gate; frozen model revisions and shipped temperatures represent the products being compared; and the canonical text preserves information material to the two decisions.
+- Limits :: A personal retrospective sample is not a general benchmark. Small or rare classes remain imprecise. Current mailbox contents may not perfectly reconstruct arrival-time knowledge. Reliability diagrams are descriptive. Shipped probabilities are not proven calibrated for personal email. The cloud endpoint is IAM access-controlled, not network-private.
+
+** Stable question definitions
+
+- Triage Action :: A three-option =choice= question in the canonical primary order: =keep unread=, =mark read=, =archive=. Keep unread makes no change. Mark read clears unread and retains INBOX. Archive clears unread and removes INBOX while retaining the message in Gmail.
+- Reply Requirement :: A binary =noul= question asking whether the owner needs to send a reply.
+- Primary request :: Ask both questions in one packed request using the models' shipped temperatures and deterministic evaluation mode. Do not inject date facts, fine-tune, recalibrate, or select thresholds on these evaluation labels.
+
+** Models and adapter boundary
+
+Implement one narrow =ModelAdapter= interface that accepts a Canonical Email State and typed questions and returns a normalised result containing the complete probability distribution, selected answer, model and base revisions, shipped temperature metadata, request hash, elapsed time, and a structured failure. It hides local versus HTTP execution and model-specific serialisation.
+
+- Kev 0.8B :: Run locally on the MacBook. Pin the exact Hugging Face model revision, Qwen base revision, Kev source revision, dependencies, and artefact hashes before predictions.
+- Kev 4B :: Run only through the agreed GCP wrapper. Pin the same categories in the baked image.
+- Laya :: Run locally on the MacBook. Pin the exact =convaiinnovations/laya-typed-decisions= revision, ModernBERT base revision, Laya source revision, dependencies, and artefact hashes.
+
+Laya belongs in the experiment because it exposes the same semantic question families and full distributions, not because its published benchmark number is directly comparable to Kev. See [[file:../findings/laya-typed-decisions.md][the Laya inquiry]].
+
+The adapter layer must validate option identity, ordering, distribution length, finite values, range, and sum. Kev's two-decimal API probabilities may be renormalised only when rounding makes their sum differ from one; preserve both received and normalised values. Run a Laya sensitivity view after rounding its probabilities to two decimals and applying the same renormalisation.
+
+** Primary and secondary metrics
+
+Compute each task separately. Never compare the numerical Brier value of the three-class task with the binary task.
+
+1. Primary Triage Action score: for each email, sum squared differences between the three predicted probabilities and the one-hot Reference Decision; report the mean.
+2. Primary Reply Requirement score: square the difference between the predicted probability of =yes= and the binary Reference Decision; report the mean.
+3. For each task and model pair, report the paired difference in per-email Brier contributions. Lower Brier is better.
+4. Resample whole Evaluated Emails with replacement 10,000 times using one recorded seed. Preserve all model and task results within an email. Construct simultaneous 95% intervals for the three pairwise Brier differences within each task from the bootstrap distribution of the maximum absolute centred pairwise deviation. Show the point estimate and interval, not only a significance label.
+5. Secondary views: accuracy, macro F1, per-class precision and recall, confusion matrices, and mean log loss. Clip probabilities for logarithms only at a declared machine-safe epsilon and report it.
+6. Report Wilson 95% intervals for individual rates. Reliability diagrams are descriptive: use at most five equal-count bins with at least 20 observations per bin; reduce the bin count or omit the plot when that rule cannot be met. Display bin counts and uncertainty.
+7. Baselines: a leave-one-out class-frequency probability baseline, a majority-class decision baseline, and an always-defer policy with zero automated Coverage. The leave-one-out calculation for each row uses Reference Decisions from all other task-evaluable rows only.
+8. Declare a clear leader for a task only when its simultaneous paired Brier interval excludes zero in its favour against each competitor and its observed High-Cost Error rate is no higher on the same evaluable set. Otherwise call the result tied or unresolved. Also report uncertainty for High-Cost Error differences; do not convert “not detectably worse” into proof of equivalence.
+
+** Simulated Action Policy
+
+This policy changes no mailbox state. Apply it to frozen probability outputs:
+
+- Accept =archive= only when its Triage Action probability is at least 0.99 and the Reply Requirement probability for =yes= is at most 0.05.
+- Accept =mark read= only when its Triage Action probability is at least 0.95 and the Reply Requirement probability for =yes= is at most 0.05.
+- Defer in all other cases, including unsupported input, failed inference, invalid probabilities, or a selected =keep unread= action.
+
+A High-Cost Error is clearing an email whose Triage Action is =keep unread= or returning no-reply when Reply Requirement is =yes=. Report Accepted Set size, end-to-end Coverage, observed High-Cost Errors, and the exact one-sided 95% binomial upper bound for the High-Cost Error rate. A future limited automation trial merits separate consideration only when the Accepted Set contains zero observed High-Cost Errors and that upper bound is at most 5%. With zero errors this requires approximately 59 accepted cases; compute the exact value rather than relying on the approximation.
+
+** Robustness checks
+
+- Evaluate all six permutations of the three Triage Action options for every email and model. The declared canonical order remains primary.
+- Compare the packed two-question request with separate requests for the two questions.
+- Repeat an identical request and compare returned distributions and selected actions.
+- Apply the agreed two-decimal Laya sensitivity transformation.
+- For each check report winner changes, maximum absolute probability drift, Simulated Action Policy flips, validation failures, and affected counts. Do not average variants into the primary score.
+
+** System measurements
+
+Measure cold model load/start, warm request latency p50 and p95, total elapsed time, throughput, failure counts, and peak local memory. Separate local and cloud measurements. For GCP report service active time, estimated cost using contemporaneous pricing, and billed cost when available. Do not present an estimate as an observed bill.
+
+** Execution ordering and result cache
+
+1. Freeze and hash the complete request set before model inference.
+2. Run Laya locally, unload it, then run Kev 0.8B locally. Do not load both models concurrently on the 8 GB MacBook.
+3. Pass the GCP synthetic gate, then run Kev 4B.
+4. Join results only by Evaluation ID and request hash. Refuse missing, duplicate, or mismatched rows.
+5. Cache private results by exact model revision plus request hash. Reuse only exact matches.
+6. Retry a transport failure once and record both attempts. Never silently retry validation or model failures with changed input.
+
+* Infrastructure and safety design
+
+** GCP target
+
+Use the active GCP project recorded at implementation time, region =europe-west1=, one Cloud Run NVIDIA L4 GPU, at least the platform-required 4 vCPU and 16 GiB memory, minimum instances zero, and maximum instances one. Build with Cloud Build and store the experiment image in a dedicated Artifact Registry repository. Use explicit, idempotent =gcloud= create, inspect, invoke, and cleanup blocks in this Org file rather than Terraform.
+
+The image bakes the pinned Kev adapter, pointer head, Qwen base, wrapper, dependencies, and hashes. It must not download moving model revisions at request time and must never contain email, credentials, or local cache contents.
+
+If L4 quota, capacity, organisational policy, or compatibility fails in =europe-west1=, stop and record the failure. Do not silently change region, service, precision, accelerator, model, or revision. A different EU region requires an explicit plan amendment approved by the owner.
+
+** Cloud service boundary
+
+- The Cloud Run service requires authentication. Grant =roles/run.invoker= only to the named owner identity and required build/deployment service identities. Verify the deployed IAM policy before real data.
+- The standard TLS endpoint is access-controlled, not network-private. Do not claim that it has a private network address.
+- Expose only a content-free health endpoint and a narrow typed-decision POST endpoint with a strict JSON schema, request-size limit, question/option limits, and timeouts.
+- Process request content in memory. Do not write it to files, databases, object storage, traces, exception strings, or logs.
+- Retain only content-free status, timing, revision, and aggregate failure metadata. Configure experiment logging and retention explicitly and record unavoidable control-plane metadata.
+- The client uses an identity token or an authenticated localhost proxy. No unauthenticated invocation is allowed.
+
+See [[file:../findings/private-gcp-model-hosting.md][the private GCP hosting inquiry]].
+
+** Synthetic canary gate
+
+Before any real email leaves the MacBook, send synthetic payloads containing unique, non-secret markers through:
+
+1. a successful request;
+2. malformed JSON;
+3. an oversized request; and
+4. a forced internal-error path.
+
+Verify expected status codes, strict-schema rejection, response shape, probability validation, authentication rejection for an unauthorised caller, health-endpoint content, and zero persistent content. Search all relevant Cloud Run, Cloud Build, Artifact Registry, Audit, Error Reporting, Trace, and project logs for every marker. The gate fails if any marker or request body appears, any endpoint is unauthenticated, any durable content store exists, or any probability fixture is wrong. Real-email inference is forbidden until every check passes and the human reviewer signs the Org evidence.
+
+** Teardown and private-data retention
+
+After the cloud run, remove the Cloud Run service and revisions, dedicated Artifact Registry image and repository, temporary build artefacts, and experiment-specific non-audit logs. Verify absence with independent list commands. Do not delete the GCP project or required audit records.
+
+Retain the local private corpus, manifest, cache, and detailed results through publication and a 30-day correction window. At that point create a human confirmation checkpoint; perform no deletion without explicit approval. Normal deletion on a FileVault-protected SSD may make data inaccessible but must not be described as guaranteed secure erasure. Retain only the public Org analysis, aggregate results, environment manifest, and non-reversible corpus-level provenance after approved disposal.
+
+* Literate implementation shape
+
+This Org file grows from plan to review cockpit without surrendering authority. Add executable blocks under the claim or gate they support. Tangle a small generated Python package, test fixtures, container files, and shell helpers into =notebooks/email-model-evaluation/=; put publishable figures under =static/email-model-evaluation/=. Every generated source file begins with a notice naming this Org file and must not be edited directly.
+
+The generated package has these deep module boundaries:
+
+- corpus :: census, eligibility, sampling, freezing, canonicalisation, hashes, and private manifest persistence;
+- decisions :: stable task vocabulary, Reference Decision table validation, and labelling checks;
+- adapters :: one normalised typed-decision interface with Laya, local Kev, and authenticated remote Kev implementations;
+- runner :: frozen-request execution, exact cache, retry policy, structured failures, joins, and system measurements;
+- evaluation :: scores, intervals, baselines, robustness, Simulated Action Policy, and aggregate tables;
+- reporting :: privacy-safe tables and figures only;
+- cloud :: narrow wrapper and deployment configuration generated from reviewed Org blocks.
+
+Before substantive Python implementation, read =~/.claude/PYTHON.md= and use its linked idioms where the design shape applies. The package interface must hide model and storage complexity rather than expose provider details to the analysis blocks.
+
+The intended phase order is:
+
+1. Baseline and read-only environment inventory.
+2. Gmail authentication and pull-only Live Mail Store.
+3. Synthetic mailbox mutation tests, then staged daily mu4e operation.
+4. Independent census, eligibility review, Sampling Order, freeze, and Reference Decisions.
+5. Corpus and adapter fixtures using synthetic email only.
+6. GCP build, IAM review, and synthetic canary gate.
+7. Frozen local and cloud inference.
+8. Locked statistical analysis and robustness checks.
+9. Human claim review and Hugo draft creation.
+10. Cloud teardown, publication decision, and later private-data retention checkpoint.
+
+* Decision Ledger
+
+| Decision | Reason | Alternatives rejected | Consequence |
+|----------+--------+-----------------------+-------------|
+| Evaluate Kev 0.8B, Kev 4B, and Laya | All provide typed probability decisions; the same private evaluation can test the “as good as Kev” claim. | Kev-only comparison; public headline comparison | Three adapters and three pairwise comparisons are required. |
+| Use 200 emails by default and expand to 300 on the label-count rule | One hundred gives wide intervals and too few rare outcomes. | Fixed 100; arbitrary post-result expansion | Labelling workload increases, but the expansion decision cannot use model results. |
+| Use all eligible 2026 year-to-date mail | This is the confirmed Target Inbox Population. | Last month; one full trailing year | Claims apply only to the recorded 2026 window. |
+| Select at most one latest inbound message per thread | Reduces dependence and matches the intended current-decision unit. | Every message; whole thread as one row | Thread reconstruction and arrival-time context are compulsory. |
+| Keep a continuing mbsync/mu4e mirror and freeze selected raw mail separately | Supports daily Emacs mail use without treating mutable state as evaluation evidence. | Gmail API-only extraction; mutable Maildir as corpus | Both Live Mail Store and Frozen Email Corpus must be maintained distinctly. |
+| OAuth first, Keychain app-password fallback | Preserves modern authentication while acknowledging stock mbsync compatibility uncertainty. | Unofficial isync build; plaintext secret; app password without a gate | The live compatibility gate determines the receive credential path. |
+| Store private data outside Git | Git-ignore is easier to defeat accidentally and private data does not belong in repository history. | Git-ignored worktree storage | Paths and permissions are validated before retrieval. |
+| Label before inference and blindly relabel 20% after seven days | Limits hindsight bias and measures label stability. | Single-pass labels; adjudication after viewing models | Model execution waits for the label-quality gate. |
+| Mean task-specific Brier score is primary | It scores the complete distribution and rewards both correctness and probability quality. | Accuracy-only; ECE as primary | Full probability vectors and paired per-email contributions are retained privately. |
+| Use paired 10,000-resample bootstrap with simultaneous intervals | Every model sees the same emails and three pairwise claims per task need multiplicity control. | Independent intervals; unpaired tests | Resampling preserves the whole email as the unit. |
+| Reliability diagrams are descriptive | Small bins cannot support a strong calibration claim. | Target-domain recalibration; fine-grained ECE claim | Use at most five equal-count bins with at least 20 observations each. |
+| Use a fixed Simulated Action Policy | It measures selective utility without mutating Gmail. | Argmax automation; tuned thresholds | The policy remains frozen and every non-defer result is auditable. |
+| Require zero observed High-Cost Errors and an exact one-sided upper bound at most 5% | Zero observed errors alone is weak evidence at small accepted counts. | Zero-error claim alone; accuracy threshold | Accepted count and Coverage must accompany the bound. |
+| Host Kev 4B on IAM-protected Cloud Run L4 in =europe-west1= | It fits the model, scales to zero, and keeps inference within the owner's project and an EU region. | Hugging Face Spaces; Vertex AI; Compute Engine; local 4B | A wrapper, quota preflight, canary gate, and teardown are required. |
+| Stop rather than silently fall back when GCP differs | Hardware or region changes would alter privacy, cost, and performance claims. | Automatic cross-region or CPU fallback | A failure becomes a recorded bounded unknown or a plan amendment. |
+| Keep Org authoritative and tangle generated modules | The experiment, infrastructure, analysis, evidence, and publication gates stay reviewable together. | Independent scripts; one monolithic block | Drift verification and generated-file warnings are compulsory. |
+| Create a Hugo post with =draft: true= only | Publication requires statistical understanding, privacy review, and owner approval. | Automatic publication; no draft | Removing the draft flag is a manual owner action outside implementation. |
+
+* Verification Contract
+
+| Claim | Evidence | Acceptance rule | Independence | Human action |
+|-------+----------+-----------------+--------------+--------------|
+| The selected set represents the declared population | mu census, direct Maildir census, eligibility ledger, sampling manifest | Counts reconcile exactly or every difference has a reviewed reason | Maildir parser does not consume mu selection output | Review exclusions and sign the census block |
+| No thread contributes twice | Private source-ID/thread-ID uniqueness test | Zero duplicate selected thread identifiers | Direct manifest uniqueness check | Inspect any fallback thread matches |
+| No future thread evidence enters input | Synthetic thread fixture and timestamp audit | Later messages never appear in canonical output | Fixture expected text is hand-written | Review canonical examples privately |
+| Canonical conversion is deterministic | Golden MIME fixtures and repeated hashes | Repeated runs are byte-identical | Hand-written expected outputs | Review signature, quote, HTML, and truncation cases |
+| Labels are stable enough | Blind 20% repeat table | At least 90% exact agreement separately for both tasks | Repeat labels hidden from first labels | Refine rubric and relabel all if failed |
+| Every model receives the same state | Request hashes and adapter fixture | Canonical-state hash is identical across primary requests | Runner-side cross-adapter assertion | Inspect mapping and option order |
+| Probability mappings are correct | Hand-calculated adapter micro-fixtures | Options align, values are finite/in-range, sums satisfy declared tolerance | Fixture oracle does not use adapter code | Review mappings and rounded renormalisation |
+| Metrics are correct | Hand-calculated tiny dataset versus implementation | Brier, log loss, F1, baselines, policy, and intervals pass their oracles | Expected values calculated independently | Review the micro-fixture worksheet |
+| GCP does not log canary content | Unique markers submitted through four paths and searched across services | Zero marker occurrences and no application request-body logs | Log search is separate from wrapper code | Sign canary evidence before real mail |
+| Cloud endpoint is access-controlled | Deployed IAM policy and unauthorised request | Only intended invoker identities; unauthorised request rejected | Read-only IAM inspection and negative client | Review policy principals |
+| Real-email cloud input is ephemeral | Configuration inventory, storage listing, and post-run cleanup | No content store; service and experiment artefacts absent after cleanup | Independent list commands | Approve inference start and teardown evidence |
+| Published tables contain no private content | Privacy scanner plus manual review | Only allowed tracked fields and aggregates | Scanner patterns differ from report generator | Read every table, chart, caption, and post paragraph |
+| Generated files match Org | Fresh tangle followed by repository diff | No diff after clean tangle; generated notices present | Verification command starts from committed plan | Review drift report |
+
+* Human review boundary
+
+** Claim-critical logic
+
+The human reviewer must inspect the population query, alias exclusions, thread grouping, arrival-time context reconstruction, Sampling Order, expansion rule, task/option mappings, complete probability handling, Brier implementation, bootstrap unit and simultaneous interval construction, High-Cost Error logic, Simulated Action Policy, Coverage denominator, and every published comparison.
+
+** Human-review-critical logic
+
+The owner must review the private eligibility sample, labelling rubric, disagreements and adjudications, representative MIME conversions, every truncation and Unsupported Input category, Gmail mutation-test results, OAuth/app-password choice, GCP IAM policy, all canary searches, infrastructure cleanup, all tables and charts, the complete Hugo draft, and the final decision to remove =draft: true=.
+
+** Logic excluded from human review
+
+Routine dependency internals, standard-library MIME decoding, Hugging Face tensor kernels, Cloud Run's managed scheduler, and unmodified statistical-library primitives need not be line-reviewed.
+
+For each exclusion:
+
+| Excluded logic | Plausible failure | Independent oracle | Failing fault probe | Required evidence |
+|----------------+-------------------+--------------------+---------------------+-------------------|
+| MIME library internals | Wrong charset or multipart choice | Hand-written decoded fixture text | Corrupt charset, nested multipart, HTML-only, attachment-only | Golden-fixture test output |
+| Model tensor kernels | Non-determinism or corrupt output | Repeated fixture and probability invariants | Identical request repeated; NaN/out-of-range injected at adapter boundary | Repeat comparison and validator failures |
+| Cloud Run scheduling | Cold-start loss or concurrent duplication | Client request ledger and server content-free request count | Scale-from-zero and duplicate-request fixture | Joined request IDs, timings, and counts |
+| Statistical primitives | Parameterisation or axis error | Hand calculation on a tiny synthetic table | Swap labels, duplicate row, zero accepted cases | Metric fixture with expected numbers |
+
+* Review Map
+
+| Question | Org heading or block | Evidence or test | Expected invariant | Consequence if wrong |
+|----------+----------------------+------------------+--------------------+----------------------|
+| Who and what does the result describe? | =* Aim and intended use= and =* Data Understanding Record= | Frozen population summary | Only the owner's 2026 Target Inbox Population is claimed | Rewrite scope and claims |
+| Were emails selected without seeing predictions? | =** Eligibility, census, and sampling= | Timestamps, manifest hashes, run ledger | Sampling and labels predate inference | Invalidate and rerun evaluation |
+| Is the sample large enough for reported slices? | sample-size block | Outcome counts and Wilson intervals | Expansion rule applied before inference; weak slices labelled descriptive | Expand if permitted or weaken claim |
+| Are labels reproducible? | Reference Decision block | Blind repeat agreement | Each task reaches 90% | Refine rubric and relabel all |
+| Do models see equivalent evidence? | canonicalisation and adapters blocks | Hash and mapping tests | Same canonical bytes and semantics | Stop; repair before scoring |
+| Are probability scores and comparisons correct? | metrics block | Independent micro-fixture and bootstrap checks | Exact expected fixture results | Do not publish metrics |
+| Does robustness change the conclusion? | robustness block | Six permutations and request variants | Primary result remains labelled if unstable | Report instability; downgrade conclusion |
+| Is the selective policy plausibly safe enough to study later? | Simulated Action Policy block | Accepted count, Coverage, errors, exact upper bound | Zero errors and upper bound at most 5% | No trial recommendation |
+| Did private email remain within the agreed boundary? | Gmail, storage, and GCP blocks | path checks, IAM, canary, log search, storage listing | No private content in Git/logs/storage | Stop, investigate, rotate/revoke as needed |
+| Can another agent reproduce the run? | =* Reproducible execution= | clean tangle, locked environment, hashes, run ledger | Same frozen inputs produce joined outputs | Mark result non-reproducible |
+| Is the post safe and supportable? | publication checklist and draft | manual claim/privacy review | Every claim maps to evidence; no private content | Keep =draft: true= |
+
+* Reproducible execution
+
+- Environment and dependencies :: Record macOS and hardware, Emacs, Doom, mu, mbsync, msmtp, oama, Python, package lock, model/base/source revisions and hashes, Docker base digest, gcloud, project identifier, region, Cloud Run revision, and contemporaneous pricing source. Secrets and account identifiers are redacted or referenced through Keychain labels.
+- Tangle and run :: Execute only reviewed named Org Babel blocks. Tangle generated files under =notebooks/email-model-evaluation/=. Run phases in the declared order; no block may fetch real mail, invoke a cloud model, mutate Gmail, or delete infrastructure merely because the file was opened or exported.
+- Parameters and date ranges :: Store the start time =2026-01-01T00:00:00 Europe/Berlin=, exact freeze time, sample caps 200/300, minimum outcome count 20, repeat fraction 20%, repeat delay seven days, agreement threshold 90%, policy thresholds 0.99/0.95/0.05, bootstrap resamples 10,000, and all probability tolerances in one reviewed parameter block.
+- Randomness :: Generate and record one non-secret analysis seed for bootstrap and repeat-label selection. Keep the Sampling Order secret key private because it is part of the source mapping. Set supported deterministic model/runtime options and report any remaining nondeterminism.
+- Generated artefacts :: Generated code/tests/container files in =notebooks/email-model-evaluation/=, privacy-safe aggregate tables, static figures in =static/email-model-evaluation/=, and a Hugo post in =content/posts/= with =draft: true=. Private corpus, manifests, caches, and row-level results stay outside Git.
+- Verification command :: The implementation must provide one documented, non-secret command that tangles from this Org file, runs synthetic/unit checks, checks generated-file drift, scans tracked artefacts for forbidden private fields, builds the Hugo site including drafts, and prints a phase/gate summary. Live Gmail, GCP deployment, and deletion remain separately named human-approved blocks rather than part of this command.
+
+** Git workflow
+
+- Blog :: Work only in =/Users/tejaskale/Code/blog/.agent-shell/worktrees/email-model-evaluation= on =plan/email-model-evaluation=, based on =origin/main=. Preserve unrelated work in the original =issue-3-el-nino-winters= worktree.
+- Doom :: At implementation time verify =~/.config/doom= is clean, create a dedicated feature branch in its active checkout, and commit only the literate mail configuration and generated files required by that repository's convention.
+- Gate :: Before return, both repositories must be clean. Record the blog and Doom starting commits, final commits, checks, and any intentionally untracked private paths. Never commit credentials or private email.
+
+* TODO Understand the statistical evaluation before publication
+:PROPERTIES:
+:BLOCKER: publication
+:END:
+
+The owner must be able to explain the following in their own words before the Hugo =draft= flag is removed:
+
+- Brier score and log loss, including why full probability distributions are scored;
+- accuracy, macro F1, per-class precision and recall, and confusion matrices;
+- paired bootstrap resampling by Evaluated Email and simultaneous intervals;
+- Wilson intervals and exact one-sided binomial upper bounds;
+- why small-sample reliability diagrams are descriptive;
+- selective prediction, the Accepted Set, Coverage, and the risk-Coverage trade-off;
+- why zero observed errors is not proof of zero risk;
+- why an unresolved comparison is not evidence of equality.
+
+Use the following prompt with the teach skill, then add a link to the resulting lesson or notes here:
+
+#+begin_example
+Teach me the statistical design of my personal email-model evaluation from first principles. I am comparing three models on the same 200–300 emails for a three-class Triage Action task and a binary Reply Requirement task. Use small numerical examples and short exercises to teach: complete-distribution Brier score, log loss, accuracy, macro F1, per-class precision and recall, confusion matrices, leave-one-out frequency and majority baselines, paired differences, resampling whole emails with a paired bootstrap, simultaneous 95% intervals for three pairwise model comparisons, Wilson intervals, an exact one-sided 95% upper error bound when zero errors are observed, reliability diagrams with few observations, selective prediction, Accepted Set, Coverage, and risk-Coverage trade-offs. Explain why about 59 accepted cases with zero observed high-cost errors are needed for a 5% one-sided upper bound, why 100 emails often cannot distinguish close models, and why failure to find a difference does not prove equivalence. End by asking me to interpret a worked mock result and decide whether it supports a future limited automation trial.
+#+end_example
+
+Publication remains blocked until the owner records completion and demonstrates understanding during the final claim review.
+
+* Publication checklist
+
+- [ ] The statistical-learning blocker is complete.
+- [ ] The population, exclusions, final sample size, class counts, Unsupported Inputs, and all join loss are disclosed.
+- [ ] Exact model and dependency revisions are disclosed.
+- [ ] Public Laya and Kev benchmark figures are not presented as an apples-to-apples comparison.
+- [ ] Point estimates appear with uncertainty and denominators.
+- [ ] Triage Action and Reply Requirement conclusions are separate.
+- [ ] Accepted count, Coverage, High-Cost Errors, and exact upper bound appear together.
+- [ ] Robustness failures and unresolved results are prominent.
+- [ ] Cloud architecture is described as IAM access-controlled, not network-private.
+- [ ] Estimated and observed cloud cost are distinguished.
+- [ ] Every table, chart, caption, and paragraph has passed private-content review.
+- [ ] The Cloud Run and Artifact Registry cleanup is verified.
+- [ ] The complete draft builds locally and remains =draft: true=.
+- [ ] The owner explicitly approves removing =draft: true= in a separate action.
+
+* Return Contract
+
+** Required from the implementing agent
+
+- Implemented outcome.
+- Data version or retrieval evidence.
+- Checks run and their results.
+- Unresolved or changed assumptions.
+- Completed Review Map.
+- Human-review-critical Org block locations.
+- Generated artefacts and drift check.
+- Claims the agent cannot verify for the user.
+- Git review baseline and final commit SHA.
+- Both repositories' branch names, starting commits, final commits, and clean status.
+- Final population funnel, sample size, task outcome counts, repeat-label agreement, Unsupported Input count, and join-loss ledger.
+- Exact model/base/source revisions and content hashes.
+- GCP project, region, service revision, IAM review, canary evidence, active time, estimated/observed cost, and teardown evidence without secret or content-bearing values.
+- Publication blocker and checklist state. The agent must not remove =draft: true=.
+
+** Implementation results
+
+The implementing agent completes this section without silently changing the agreed plan.
+
+* Unknowns and out of scope
+
+** Blocking unknowns
+
+None at planning time. Each operational gate may stop implementation safely. A failed gate does not authorise a workaround that changes the plan.
+
+** Bounded unknowns
+
+| Unknown | Bound | Risk | Planned check | Owner |
+|---------+-------+------+---------------+---------------|
+| Stock mbsync OAuth compatibility | Only the agreed =OAUTHBEARER= path is attempted | Receive authentication may fail | Pull-only live gate, then Keychain app-password fallback | Implementing agent; owner approves Google consent |
+| Eligible 2026 thread count | At most all eligible threads through freeze time | Fewer than 300 may widen intervals | Dual census before Sampling Order | Implementing agent and owner |
+| Rare outcome counts | Expansion cap is 300 or population size | Per-class claims may remain weak | Count labels before inference | Implementing agent |
+| Label stability | Minimum 90% exact agreement per task | Unstable rubric invalidates comparison | Blind 20% repeat after seven days | Owner |
+| Laya and Kev Mac performance | Sequential execution on an 8 GB M1 MacBook | Memory pressure or slow runs | Synthetic fixture and peak-memory measurement | Implementing agent |
+| Cloud Run L4 availability | =europe-west1= only under this plan | Kev 4B run may be blocked | Quota, capacity, and policy preflight | Implementing agent |
+| Kev Cloud Run compatibility | Pinned bf16 model on one L4 | Container may fail to start or serve | Synthetic build and canary gate | Implementing agent |
+| Actual GCP cost | One max instance, scale to zero, experiment duration only | Cost differs from estimate | Record active time and billing evidence | Implementing agent |
+| Residual dependence across senders/campaigns | One email per thread, no stronger clustering claim | Intervals may be optimistic | Describe concentration and sensitivity where feasible | Implementing agent and reviewer |
+| Private-data disposal date | Publication plus 30 days | Data remains locally sensitive until approved deletion | Create a dated human confirmation checkpoint | Owner |
+
+** Deferred choices and out of scope
+
+- Fine-tuning, target-domain recalibration, threshold tuning, and collecting training labels.
+- Enabling automatic read, archive, reply, delete, or other model-driven Gmail changes.
+- A limited live automation trial; this needs a new plan even if the Simulated Action Policy passes.
+- Network-private GCP access through VPN, VPC, or Private Service Connect.
+- Automatic fallback to another region, accelerator, precision, model, or hosting service.
+- Synchronising Spam or every custom Gmail label.
+- Attachment understanding, OCR, remote-link retrieval, and generated replies.
+- General claims about model performance outside this owner's frozen inbox population.
+- Automatic publication or removal of the Hugo draft flag.
+
+* Next action
+
+Delegate implementation against this exact file. The implementing agent begins with the read-only baseline and environment inventory, records both repository baselines, and stops at the first human or external-state gate. It must not retrieve email, create OAuth credentials, mutate Gmail, deploy GCP resources, process real email, delete data, or publish the post without the corresponding reviewed gate in this plan.
