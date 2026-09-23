@@ -1,8 +1,8 @@
 # macOS only. PyObjC is the hotkey, the microphone, and Command-V.
-# mlx-lm runs the 0.5B cleanup model on Apple silicon.
+# mlx-lm 0.30.7 knows the Qwen3.5 architecture used by the cleanup model.
 pyobjc-core>=10.3
 pyobjc-framework-Cocoa>=10.3
 pyobjc-framework-Quartz>=10.3
 pyobjc-framework-AVFoundation>=10.3
 pyobjc-framework-ApplicationServices>=10.3
-mlx-lm>=0.18
+mlx-lm>=0.30.7

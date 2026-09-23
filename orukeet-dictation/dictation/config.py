@@ -61,7 +61,7 @@ class Config:
     server_script: str | None = None
     installation: str | None = None
     cleanup: bool = True
-    cleanup_model: str = "mlx-community/Qwen2.5-0.5B-Instruct-4bit"
+    cleanup_model: str = "mlx-community/Qwen3.5-0.8B-4bit-OptiQ"
 
     @classmethod
     def from_env(cls, environment: dict[str, str] | None = None) -> Config:
@@ -82,6 +82,6 @@ class Config:
             server_script=env.get("ORUKEET_SERVER_SCRIPT"),
             installation=env.get("ORUKEET_INSTALLATION"),
             cleanup=truthy(env.get("ORUKEET_CLEANUP"), True),
-            cleanup_model=env.get("ORUKEET_CLEANUP_MODEL", "mlx-community/Qwen2.5-0.5B-Instruct-4bit"),
+            cleanup_model=env.get("ORUKEET_CLEANUP_MODEL", "mlx-community/Qwen3.5-0.8B-4bit-OptiQ"),
         )
 # Settings:1 ends here

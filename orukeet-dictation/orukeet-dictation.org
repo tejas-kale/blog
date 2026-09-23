@@ -23,7 +23,7 @@ Recognition is [[https://huggingface.co/oruk/orukeet][Orukeet]], running on the 
 
 On an 8 GB M1 MacBook Air, use the native Q8 weights. That file is about 714 MB. The warm worker wants roughly 1.5–2.5 GB of unified memory. Run one worker. Recordings stop at 60 seconds. Orukeet's fast Metal path covers clips up to about 41 seconds; longer clips still transcribe.
 
-After Orukeet returns text, a second model turns the spoken wording into a written sentence: fillers and false starts come out, punctuation goes in. The model is [[https://huggingface.co/mlx-community/Qwen2.5-0.5B-Instruct-4bit][Qwen2.5-0.5B-Instruct]] in a 4-bit MLX build, about 278 MB on disk and under 1 GB once loaded for a short clip. A 3B model at the same precision already peaks near 2 GB on an M1 Air, which is too much beside Orukeet. The 0.5B model is the same kind of size as Orukeet, and it only has to edit a sentence it has already been given.
+After Orukeet returns text, a second model turns the spoken wording into a written sentence: fillers and false starts come out, punctuation goes in. The model is [[https://huggingface.co/mlx-community/Qwen3.5-0.8B-4bit-OptiQ][Qwen3.5-0.8B]] at mixed 4-bit, about 0.6 GB on disk and about 1.5 GB in memory for a short clip. That is the newest Qwen that still fits beside Orukeet. Qwen 3.6 and Qwen 3.8 start at tens of billions of parameters. NVIDIA's smallest current Nemotron Nano is 4B, about 2.3 GB at 4-bit, which crowds the speech model on an 8 GB Air.
 
 Two programs cooperate:
 
@@ -170,7 +170,7 @@ class Config:
     server_script: str | None = None
     installation: str | None = None
     cleanup: bool = True
-    cleanup_model: str = "mlx-community/Qwen2.5-0.5B-Instruct-4bit"
+    cleanup_model: str = "mlx-community/Qwen3.5-0.8B-4bit-OptiQ"
 
     @classmethod
     def from_env(cls, environment: dict[str, str] | None = None) -> Config:
@@ -191,7 +191,7 @@ class Config:
             server_script=env.get("ORUKEET_SERVER_SCRIPT"),
             installation=env.get("ORUKEET_INSTALLATION"),
             cleanup=truthy(env.get("ORUKEET_CLEANUP"), True),
-            cleanup_model=env.get("ORUKEET_CLEANUP_MODEL", "mlx-community/Qwen2.5-0.5B-Instruct-4bit"),
+            cleanup_model=env.get("ORUKEET_CLEANUP_MODEL", "mlx-community/Qwen3.5-0.8B-4bit-OptiQ"),
         )
 #+end_src
 
@@ -1096,9 +1096,11 @@ if __name__ == "__main__":
 
 Orukeet writes down what it heard, including the parts you would not type. "Um, I want to, I want the report" should become "I want the report." The small language model does that edit. It must leave the speaker's words alone: no summary, no synonym, no new fact.
 
-A 0.5B model will sometimes ignore that instruction. The guard in this module is what we trust. =apply_cleanup= keeps the model's line only when every word it produced already belongs to the transcript (after expanding a few spoken forms such as "gonna" into "going to"), the words stay in order, and it has not thrown away most of the sentence. Anything else is pasted as Orukeet wrote it.
+Qwen 2.5 0.5B was an earlier choice because a 4-bit copy was small and =mlx-lm= already knew how to load it. Qwen3.5-0.8B is the later small model in that family. Qwen 3.6 has no model under 27B. Qwen 3.8-Flash is a 125B mixture-of-experts. Both are the wrong size for this laptop. NVIDIA Nemotron models are strong, and the smallest Nano is still 4B, about 2.3 GB at 4-bit. Hugging Face does have a Qwen3-0.6B fine-tune whose only job is spoken-to-written cleanup, =Aye10032/Qwen3-0.6B-ASR-Refiner=, trained on Chinese. This dictation is multilingual, and that checkpoint is Chinese, so the general Qwen3.5-0.8B is the one we load. The prompt tells it the job.
 
-=Cleaner= loads the MLX weights once. =mlx_lm= is imported inside =load=, so this file imports on a machine that does not have MLX. The first launch downloads about 278 MB into the Hugging Face cache.
+The guard is what we trust when the model wanders. =apply_cleanup= keeps the model's line only when every word it produced already belongs to the transcript (after expanding a few spoken forms such as "gonna" into "going to"), the words stay in order, and it has not thrown away most of the sentence. Anything else is pasted as Orukeet wrote it. Qwen3.5 thinks out loud unless we pass =enable_thinking=False=. A leftover think block is stripped before that check.
+
+=Cleaner= loads the MLX weights once. =mlx_lm= is imported inside =load=, so this file imports on a machine that does not have MLX. The first launch downloads about 0.6 GB into the Hugging Face cache. =mlx-lm= 0.30.7 or newer knows the Qwen3.5 architecture.
 
 #+begin_src python :tangle dictation/cleanup.py
 """Turn a speech transcript into a written sentence, without paraphrasing it."""
@@ -1107,7 +1109,7 @@ from __future__ import annotations
 
 import re
 
-DEFAULT_MODEL = "mlx-community/Qwen2.5-0.5B-Instruct-4bit"
+DEFAULT_MODEL = "mlx-community/Qwen3.5-0.8B-4bit-OptiQ"
 
 SYSTEM = (
     "Turn the speech transcript into one written sentence. "
@@ -1140,7 +1142,8 @@ def apply_cleanup(original: str, model_output: str) -> str:
 
 
 def _model_line(raw: str) -> str:
-    text = raw.strip().strip('"').strip("'")
+    text = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL | re.IGNORECASE)
+    text = text.strip().strip('"').strip("'")
     for prefix in ("written:", "cleaned:", "output:", "transcript:"):
         if text.lower().startswith(prefix):
             text = text[len(prefix):].strip()
@@ -1215,9 +1218,17 @@ class Cleaner:
             {"role": "user", "content": transcript},
         ]
         if getattr(tokenizer, "chat_template", None):
-            prompt = tokenizer.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
-            )
+            try:
+                prompt = tokenizer.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                    enable_thinking=False,
+                )
+            except TypeError:
+                prompt = tokenizer.apply_chat_template(
+                    messages, tokenize=False, add_generation_prompt=True
+                )
         else:
             prompt = f"{SYSTEM}\n\nTranscript:\n{transcript}\n\nWritten:\n"
         max_tokens = max(32, min(128, 2 * len(_tokens(transcript)) + 16))
@@ -1274,8 +1285,13 @@ class CleanupTests(unittest.TestCase):
             "Send the file.",
         )
 
-    def test_default_model_is_the_half_billion_mlx_build(self) -> None:
-        self.assertEqual(DEFAULT_MODEL, "mlx-community/Qwen2.5-0.5B-Instruct-4bit")
+    def test_ignores_a_thinking_preamble(self) -> None:
+        original = "um send the file"
+        output = "<think>drop the filler</think>\nSend the file."
+        self.assertEqual(apply_cleanup(original, output), "Send the file.")
+
+    def test_default_model_is_qwen35_0_8b(self) -> None:
+        self.assertEqual(DEFAULT_MODEL, "mlx-community/Qwen3.5-0.8B-4bit-OptiQ")
 
 
 if __name__ == "__main__":
@@ -1489,13 +1505,13 @@ PyObjC is macOS-only. The worker wheel is separate so the tests can install noth
 
 #+begin_src text :tangle requirements.txt :comments no
 # macOS only. PyObjC is the hotkey, the microphone, and Command-V.
-# mlx-lm runs the 0.5B cleanup model on Apple silicon.
+# mlx-lm 0.30.7 knows the Qwen3.5 architecture used by the cleanup model.
 pyobjc-core>=10.3
 pyobjc-framework-Cocoa>=10.3
 pyobjc-framework-Quartz>=10.3
 pyobjc-framework-AVFoundation>=10.3
 pyobjc-framework-ApplicationServices>=10.3
-mlx-lm>=0.18
+mlx-lm>=0.30.7
 #+end_src
 
 #+begin_src text :tangle server/requirements.txt :comments no
@@ -1607,7 +1623,7 @@ On the Mac:
 ./scripts/run.sh
 ```
 
-Hold Right Option in any text field, speak, and release. The transcript is cleaned by Qwen2.5 0.5B, then pasted. Set `ORUKEET_CLEANUP=0` to skip that step. The tests, which do not need a Mac:
+Hold Right Option in any text field, speak, and release. The transcript is cleaned by Qwen3.5 0.8B, then pasted. Set `ORUKEET_CLEANUP=0` to skip that step. The tests, which do not need a Mac:
 
 ```bash
 python3 -m unittest discover -s tests -v

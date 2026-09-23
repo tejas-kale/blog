@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import re
 
-DEFAULT_MODEL = "mlx-community/Qwen2.5-0.5B-Instruct-4bit"
+DEFAULT_MODEL = "mlx-community/Qwen3.5-0.8B-4bit-OptiQ"
 
 SYSTEM = (
     "Turn the speech transcript into one written sentence. "
@@ -38,7 +38,8 @@ def apply_cleanup(original: str, model_output: str) -> str:
 
 
 def _model_line(raw: str) -> str:
-    text = raw.strip().strip('"').strip("'")
+    text = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL | re.IGNORECASE)
+    text = text.strip().strip('"').strip("'")
     for prefix in ("written:", "cleaned:", "output:", "transcript:"):
         if text.lower().startswith(prefix):
             text = text[len(prefix):].strip()
@@ -113,9 +114,17 @@ class Cleaner:
             {"role": "user", "content": transcript},
         ]
         if getattr(tokenizer, "chat_template", None):
-            prompt = tokenizer.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
-            )
+            try:
+                prompt = tokenizer.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                    enable_thinking=False,
+                )
+            except TypeError:
+                prompt = tokenizer.apply_chat_template(
+                    messages, tokenize=False, add_generation_prompt=True
+                )
         else:
             prompt = f"{SYSTEM}\n\nTranscript:\n{transcript}\n\nWritten:\n"
         max_tokens = max(32, min(128, 2 * len(_tokens(transcript)) + 16))

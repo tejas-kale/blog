@@ -40,8 +40,13 @@ class CleanupTests(unittest.TestCase):
             "Send the file.",
         )
 
-    def test_default_model_is_the_half_billion_mlx_build(self) -> None:
-        self.assertEqual(DEFAULT_MODEL, "mlx-community/Qwen2.5-0.5B-Instruct-4bit")
+    def test_ignores_a_thinking_preamble(self) -> None:
+        original = "um send the file"
+        output = "<think>drop the filler</think>\nSend the file."
+        self.assertEqual(apply_cleanup(original, output), "Send the file.")
+
+    def test_default_model_is_qwen35_0_8b(self) -> None:
+        self.assertEqual(DEFAULT_MODEL, "mlx-community/Qwen3.5-0.8B-4bit-OptiQ")
 
 
 if __name__ == "__main__":
