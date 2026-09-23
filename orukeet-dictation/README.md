@@ -1,20 +1,32 @@
 # Orukeet dictation for macOS
 
-Headless, on-device dictation for any app: hold a key, speak, release, and the transcript is pasted at the caret. Same push-to-talk pattern as Wispr Flow, using [Orukeet](https://huggingface.co/oruk/orukeet) instead of a hosted recognizer.
+Hold a key, speak, release. The transcript is pasted into whatever app you were typing in. Same idea as Wispr Flow, using [Orukeet](https://huggingface.co/oruk/orukeet) on your machine. There is no window.
 
-The Swift agent has no windows and no menu bar (`LSUIElement`). Recognition is a persistent local Python worker, as in [Sacha Chua’s Orukeet notes](https://sachachua.com/blog/2026/09/experimenting-with-orukeet-for-speech-recognition/): load the model once, then transcribe each clip without reloading.
+Everything you run is Python. The model stays loaded in one local worker, which is the setup from [Sacha Chua’s Orukeet notes](https://sachachua.com/blog/2026/09/experimenting-with-orukeet-for-speech-recognition/).
+
+## What happens when you hold the key
+
+1. `dictation/hotkey.py` sees Right Option go down, even if Mail or a browser is in front.
+2. `dictation/record.py` turns the microphone on and writes a WAV.
+3. You release the key. `dictation/client.py` sends that WAV to `http://127.0.0.1:8765`.
+4. `server/orukeet_server.py` already has Orukeet in memory and returns the text.
+5. `dictation/paste.py` copies the text, presses Command-V, then puts your old clipboard back.
+
+`dictation/agent.py` is the short file that ties those steps together.
+
+Watching keys in other apps and pressing Command-V are macOS system calls. Python reaches them through [PyObjC](https://pyobjc.readthedocs.io/). That is the only non-Python piece, and it is a library rather than a second app.
 
 ## 8 GB M1 MacBook Air
 
-Use the **native Q8** install with `--device auto` (Metal on Apple silicon). That weight file is about **714 MB**. Do not install the 2.5 GB NeMo checkpoint or the 1.3 GB F16 GGUF on this machine.
+Install the **native Q8** model with `--device auto` (Metal on Apple silicon). The weight file is about **714 MB**. Skip the 2.5 GB NeMo checkpoint and the 1.3 GB F16 file.
 
-Expect roughly 1.5–2.5 GB unified memory for the worker once it is warm. Close heavy browsers before the first load. Keep **one** worker; a second copy will thrash swap. Recordings are capped at 60 seconds.
+Once warm, the worker wants roughly 1.5–2.5 GB of unified memory. Close heavy browsers before the first load. Run one worker. A second copy will thrash swap. Recordings stop at 60 seconds.
 
-Orukeet’s positional Metal cache covers clips up to about 41 seconds. Longer utterances still transcribe, but they skip that cache.
+Orukeet’s positional Metal cache covers clips up to about 41 seconds. Longer clips still transcribe; they skip that cache.
 
 ## Install
 
-On the Air, with Python 3.12+ and Xcode Command Line Tools:
+On the Air, with Python 3.12+:
 
 ```bash
 cd orukeet-dictation
@@ -23,26 +35,17 @@ chmod +x scripts/*.sh
 ./scripts/run.sh
 ```
 
-`install-orukeet.sh` creates `.venv`, installs [Orukeet 0.1.1](https://github.com/Oruk-AI/orukeet/releases/download/v0.1.1/orukeet-0.1.1-py3-none-any.whl), and writes `installation.json` with absolute paths to the Q8 model and runtime.
+`install-orukeet.sh` creates `.venv`, installs [Orukeet 0.1.1](https://github.com/Oruk-AI/orukeet/releases/download/v0.1.1/orukeet-0.1.1-py3-none-any.whl), installs PyObjC, and writes `installation.json`.
 
-First run will ask for **Microphone** and **Accessibility**. Accessibility is required so the agent can see the hotkey while another app is focused and so synthetic ⌘V can land in that app.
-
-Optional app bundle (still no UI):
-
-```bash
-./scripts/package-app.sh
-open dist/OrukeetDictation.app
-```
-
-Grant permissions to that bundle, not only to Terminal, if you launch it that way.
+The first launch asks for **Microphone** and **Accessibility**. Both are granted to the terminal you launched from (Terminal or iTerm), because that is the app macOS sees. Accessibility is what lets the hotkey work while another app is focused, and what lets Command-V land in that app.
 
 ## Use
 
-1. Click a text field in Mail, Notes, a browser, or an editor.
-2. Hold **Right Option** (default). Speak.
-3. Release. After Orukeet returns text, the agent pastes it and restores the previous clipboard.
+1. Click a text field.
+2. Hold **Right Option**. Speak.
+3. Release. The transcript is pasted, and the previous clipboard contents come back.
 
-Change the hotkey with `ORUKEET_HOTKEY`:
+`ORUKEET_HOTKEY` changes the key:
 
 | Value | Key |
 | --- | --- |
@@ -50,29 +53,28 @@ Change the hotkey with `ORUKEET_HOTKEY`:
 | `globe` or `fn` | Globe / Fn |
 | `right-shift` | Right Shift |
 | `f5` | F5 |
-| a numeric key code | any other key |
+| a number | that macOS key code |
 
-Wispr Flow defaults to Fn. On a MacBook Air, Right Option is more predictable than Globe/Fn.
+## Files
 
-## Layout
+- `dictation/agent.py` — start here
+- `dictation/hotkey.py` — hold-to-talk
+- `dictation/record.py` — microphone to WAV
+- `dictation/paste.py` — Command-V into the focused app
+- `dictation/client.py` — HTTP call to the worker
+- `server/orukeet_server.py` — keeps Orukeet loaded
+- `launchd/` — optional login item; edit the absolute path first
 
-- `Sources/OrukeetDictation` — macOS agent: hotkey, mic, paste
-- `Sources/OrukeetDictationCore` — WAV encoder, HTTP client, config
-- `server/orukeet_server.py` — localhost worker (`POST /transcribe`, `GET /health`)
-- `launchd/` — optional Login Item plist (edit the absolute path first)
-
-The worker listens on `127.0.0.1:8765` only. Audio never leaves the machine.
+Audio stays on `127.0.0.1`. To try the worker without the model, set `ORUKEET_STUB=1`.
 
 ## Tests
 
 ```bash
-python3 -m unittest tests/test_orukeet_server.py
-# on a Mac with Swift:
-swift test
+python3 -m unittest tests.test_dictation tests.test_orukeet_server
 ```
 
-Stub mode (`ORUKEET_STUB=1`) exercises the HTTP contract without downloading weights.
+These cover config, the HTTP client, and the worker. They do not press keys or open the microphone.
 
 ## License
 
-Agent code is MIT-licensed. Orukeet weights are CC BY-SA 4.0 with NVIDIA’s foundation attribution; see the [model card](https://huggingface.co/oruk/orukeet).
+This code is MIT. Orukeet weights are CC BY-SA 4.0 with NVIDIA’s foundation attribution. See the [model card](https://huggingface.co/oruk/orukeet).

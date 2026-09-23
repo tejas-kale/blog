@@ -104,7 +104,7 @@ class ServerTests(unittest.TestCase):
 
 
 class WavHeaderTests(unittest.TestCase):
-    def test_header_layout_matches_swift_encoder(self) -> None:
+    def test_wav_header_layout(self) -> None:
         wav = pcm16_mono_wav([1, 2], sample_rate=16000)
         self.assertEqual(wav[:4], b"RIFF")
         self.assertEqual(wav[8:12], b"WAVE")
