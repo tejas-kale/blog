@@ -24,8 +24,16 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.max_seconds, 120)
         self.assertFalse(config.trailing_space)
         self.assertFalse(config.spawn_server)
-        self.assertFalse(config.cleanup)
+        self.assertEqual(config.cleanup, "off")
         self.assertEqual(config.server_url, "http://127.0.0.1:9000")
+
+    def test_cleanup_modes(self) -> None:
+        self.assertEqual(Config.from_env({}).cleanup, "model")
+        self.assertEqual(
+            Config.from_env({}).cleanup_file, "SpeakoFlow-Mini-0.8B-Q4_K_M.gguf"
+        )
+        self.assertEqual(Config.from_env({"ORUKEET_CLEANUP": "rules"}).cleanup, "rules")
+        self.assertEqual(Config.from_env({"ORUKEET_CLEANUP": "0"}).cleanup, "off")
 
     def test_default_hotkey(self) -> None:
         self.assertEqual(Config.from_env({}).hotkey_code, RIGHT_OPTION)

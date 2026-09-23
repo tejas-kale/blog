@@ -51,6 +51,18 @@ def truthy(raw: str | None, default: bool) -> bool:
     return raw.lower() in {"1", "true", "yes"}
 
 
+def cleanup_mode(raw: str | None) -> str:
+    """off pastes Orukeet. rules skips the language model. model is both stages."""
+    if raw is None:
+        return "model"
+    key = raw.strip().lower()
+    if key in {"0", "false", "no", "off"}:
+        return "off"
+    if key in {"rules", "rule"}:
+        return "rules"
+    return "model"
+
+
 @dataclass(frozen=True)
 class Config:
     server_url: str = "http://127.0.0.1:8765"
@@ -60,8 +72,9 @@ class Config:
     spawn_server: bool = True
     server_script: str | None = None
     installation: str | None = None
-    cleanup: bool = True
-    cleanup_model: str = "mlx-community/Qwen3.5-0.8B-4bit-OptiQ"
+    cleanup: str = "model"
+    cleanup_model: str = "SpeakoFlow/speakoflow-mini"
+    cleanup_file: str = "SpeakoFlow-Mini-0.8B-Q4_K_M.gguf"
 
     @classmethod
     def from_env(cls, environment: dict[str, str] | None = None) -> Config:
@@ -81,7 +94,10 @@ class Config:
             spawn_server=truthy(env.get("ORUKEET_SPAWN_SERVER"), True),
             server_script=env.get("ORUKEET_SERVER_SCRIPT"),
             installation=env.get("ORUKEET_INSTALLATION"),
-            cleanup=truthy(env.get("ORUKEET_CLEANUP"), True),
-            cleanup_model=env.get("ORUKEET_CLEANUP_MODEL", "mlx-community/Qwen3.5-0.8B-4bit-OptiQ"),
+            cleanup=cleanup_mode(env.get("ORUKEET_CLEANUP")),
+            cleanup_model=env.get("ORUKEET_CLEANUP_MODEL", "SpeakoFlow/speakoflow-mini"),
+            cleanup_file=env.get(
+                "ORUKEET_CLEANUP_FILE", "SpeakoFlow-Mini-0.8B-Q4_K_M.gguf"
+            ),
         )
 # Settings:1 ends here

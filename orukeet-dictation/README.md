@@ -11,7 +11,7 @@ On the Mac:
 ./scripts/run.sh
 ```
 
-Hold Right Option in any text field, speak, and release. The transcript is cleaned by Qwen3.5 0.8B, then pasted. Set `ORUKEET_CLEANUP=0` to skip that step. The tests, which do not need a Mac:
+Hold Right Option in any text field, speak, and release. Rules run first, then SpeakoFlow Mini Q4_K_M cleans the English transcript, and the text is pasted. Set `ORUKEET_CLEANUP=rules` to skip the model, or `ORUKEET_CLEANUP=0` to paste Orukeet's text. The tests, which do not need a Mac:
 
 ```bash
 python3 -m unittest discover -s tests -v

@@ -87,9 +87,9 @@ class DictationApp:
 
             try:
                 result = transcribe(self.config.server_url, wav)
-                raw = str(result.get("text", ""))
-                if self.cleaner is not None:
-                    raw = self.cleaner.clean(raw)
+                from dictation.cleanup import cleanup_result
+
+                raw = cleanup_result(result, self.config.cleanup, self.cleaner)
                 text = prepare_text(raw, self.config.trailing_space)
                 if text:
                     AppHelper.callLater(0, insert_text, text)
@@ -120,16 +120,16 @@ class DictationApp:
                 log(f"Orukeet server is not ready: {exc}")
                 AppHelper.callLater(0, AppHelper.stopEventLoop)
                 return
-            if self.config.cleanup:
+            if self.config.cleanup == "model":
                 from dictation.cleanup import Cleaner
 
-                self.cleaner = Cleaner(self.config.cleanup_model)
+                self.cleaner = Cleaner(self.config.cleanup_model, self.config.cleanup_file)
                 try:
-                    log("loading the cleanup model")
+                    log("loading SpeakoFlow")
                     self.cleaner.load()
                 except Exception as exc:  # noqa: BLE001
                     self.cleaner = None
-                    log(f"cleanup model unavailable, pasting the transcript as heard: {exc}")
+                    log(f"cleanup model unavailable, using the rules only: {exc}")
 
             def arm() -> None:
                 self.hotkey = HotkeyMonitor(self.config.hotkey_code, self.begin, self.finish)
