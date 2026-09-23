@@ -206,6 +206,614 @@ None.
 - Choosing which regular cut the post shows. That choice waits until both results exist.
 - A causal model, a club fixed-effect regression beyond the within-club correlation, and any claim about chemistry.
 
+* Tangled source
+
+Human-review-critical R. Tangle regenerates the files under notebooks/pl-squad-tenure-points/.
+
+#+begin_src R :tangle ../notebooks/pl-squad-tenure-points/regulars.R
+regular_threshold <- function() 20L
+
+regulars_for_cut <- function(player_seasons, cut) {
+  if (!cut %in% c("starts", "appearances")) {
+    stop("cut must be starts or appearances")
+  }
+  count <- player_seasons[[cut]]
+  keep <- !is.na(count) & count >= regular_threshold()
+  player_seasons[keep, , drop = FALSE]
+}
+
+club_season_median_tenure <- function(regulars) {
+  if (nrow(regulars) == 0) {
+    return(data.frame(
+      club = character(),
+      season_end = integer(),
+      median_tenure = numeric(),
+      n_regulars = integer(),
+      stringsAsFactors = FALSE
+    ))
+  }
+  keys <- paste(regulars$club, regulars$season_end, sep = "\r")
+  split_rows <- split(regulars, keys)
+  rows <- lapply(split_rows, function(d) {
+    data.frame(
+      club = d$club[[1]],
+      season_end = d$season_end[[1]],
+      median_tenure = median(d$tenure),
+      n_regulars = nrow(d),
+      stringsAsFactors = FALSE
+    )
+  })
+  out <- do.call(rbind, rows)
+  rownames(out) <- NULL
+  out[order(out$club, out$season_end), , drop = FALSE]
+}
+#+end_src
+
+#+begin_src R :tangle ../notebooks/pl-squad-tenure-points/tenure.R
+# A campaign is 1 September through 31 May. A player who is at one senior
+# club for that whole stretch adds 1. A loan that covers that whole stretch
+# is a full-season loan: the parent records 0 and the streak is wiped, and
+# the loan club adds 1. Any other split of the stretch is a mid-season
+# 0.5. A permanent move before 1 September gives the new club the season.
+# A later return after a permanent move or a full-season loan starts at 1.
+
+campaign_start <- function(season_end) {
+  as.Date(sprintf("%d-09-01", season_end - 1L))
+}
+
+campaign_end <- function(season_end) {
+  as.Date(sprintf("%d-05-31", season_end))
+}
+
+# June, July, and August belong to the season that is about to be played.
+season_holding_move <- function(date) {
+  date <- as.Date(date)
+  year <- as.integer(format(date, "%Y"))
+  month <- as.integer(format(date, "%m"))
+  if (month >= 6L) year + 1L else year
+}
+
+involvement_from_transfers <- function(transfers, through_season_end) {
+  transfers$date <- as.Date(transfers$date)
+  transfers$player_id <- as.character(transfers$player_id)
+  empty <- data.frame(
+    player_id = character(),
+    season_end = integer(),
+    club = character(),
+    involvement = character(),
+    stringsAsFactors = FALSE
+  )
+  if (nrow(transfers) == 0) return(empty)
+
+  pieces <- lapply(split(transfers, transfers$player_id), function(events) {
+    events <- events[order(events$date, seq_len(nrow(events))), , drop = FALSE]
+    changes <- data.frame(
+      date = as.Date(character()),
+      club = character(),
+      kind = character(),
+      parent = character(),
+      stringsAsFactors = FALSE
+    )
+    club <- NA_character_
+    kind <- NA_character_
+    parent <- NA_character_
+    for (i in seq_len(nrow(events))) {
+      type <- events$transfer_type[[i]]
+      from <- events$club_from[[i]]
+      to <- events$club_to[[i]]
+      if (type == "academy") {
+        club <- to
+        kind <- "academy"
+        parent <- NA_character_
+      } else if (type == "senior" || type == "permanent") {
+        club <- to
+        kind <- "senior"
+        parent <- NA_character_
+      } else if (type == "loan") {
+        parent <- from
+        club <- to
+        kind <- "loan"
+      } else if (type == "end_loan") {
+        club <- to
+        kind <- "senior"
+        parent <- NA_character_
+      } else {
+        stop("Unknown transfer_type: ", type)
+      }
+      changes <- rbind(changes, data.frame(
+        date = events$date[[i]],
+        club = club,
+        kind = kind,
+        parent = if (is.na(parent)) "" else parent,
+        stringsAsFactors = FALSE
+      ))
+    }
+
+    first_date <- min(events$date)
+    first_season <- season_holding_move(first_date)
+    rows <- empty
+    for (season_end in seq.int(first_season, through_season_end)) {
+      days <- seq(campaign_start(season_end), campaign_end(season_end), by = "day")
+      idx <- findInterval(as.numeric(days), as.numeric(changes$date))
+      active <- changes[idx[idx > 0], , drop = FALSE]
+      if (nrow(active) == 0) next
+      senior_or_loan <- active[active$kind %in% c("senior", "loan"), , drop = FALSE]
+      if (nrow(senior_or_loan) == 0) {
+        academy <- active[active$kind == "academy", , drop = FALSE]
+        if (nrow(academy) > 0) {
+          rows <- rbind(rows, data.frame(
+            player_id = events$player_id[[1]],
+            season_end = season_end,
+            club = academy$club[[1]],
+            involvement = "academy",
+            stringsAsFactors = FALSE
+          ))
+        }
+        next
+      }
+
+      clubs <- unique(senior_or_loan$club)
+      loan_clubs <- unique(senior_or_loan$club[senior_or_loan$kind == "loan"])
+      senior_clubs <- unique(senior_or_loan$club[senior_or_loan$kind == "senior"])
+      parents <- unique(senior_or_loan$parent[senior_or_loan$kind == "loan" & senior_or_loan$parent != ""])
+
+      add <- function(club_name, involvement) {
+        data.frame(
+          player_id = events$player_id[[1]],
+          season_end = season_end,
+          club = club_name,
+          involvement = involvement,
+          stringsAsFactors = FALSE
+        )
+      }
+
+      if (length(clubs) == 1 && length(loan_clubs) == 1 && length(senior_clubs) == 0) {
+        rows <- rbind(
+          rows,
+          add(parents[[1]], "full_loan_out"),
+          add(loan_clubs[[1]], "full_loan_in")
+        )
+      } else if (length(loan_clubs) == 0 && length(senior_clubs) == 1) {
+        rows <- rbind(rows, add(senior_clubs[[1]], "senior"))
+      } else if (length(loan_clubs) >= 1 && length(intersect(parents, senior_clubs)) >= 1) {
+        parent <- intersect(parents, senior_clubs)[[1]]
+        rows <- rbind(rows, add(parent, "mid_loan_parent"))
+        for (loan_club in loan_clubs) {
+          rows <- rbind(rows, add(loan_club, "mid_loan_in"))
+        }
+      } else if (length(loan_clubs) == 0 && length(senior_clubs) >= 2) {
+        start_idx <- idx[idx > 0][[1]]
+        end_idx <- idx[idx > 0][[length(idx[idx > 0])]]
+        start_club <- changes$club[[start_idx]]
+        rows <- rbind(rows, add(start_club, "mid_move_out"))
+        for (other in setdiff(senior_clubs, start_club)) {
+          rows <- rbind(rows, add(other, "mid_move_in"))
+        }
+      } else if (length(loan_clubs) >= 1 && length(senior_clubs) == 0) {
+        parent <- parents[[1]]
+        rows <- rbind(rows, add(parent, "full_loan_out"))
+        for (loan_club in loan_clubs) {
+          rows <- rbind(rows, add(loan_club, "full_loan_in"))
+        }
+      } else {
+        stop("Unhandled squad split for ", events$player_id[[1]], " ", season_end)
+      }
+    }
+
+    permanent <- events[events$transfer_type == "permanent", , drop = FALSE]
+    for (i in seq_len(nrow(permanent))) {
+      season_end <- season_holding_move(permanent$date[[i]])
+      if (season_end > through_season_end) next
+      left <- permanent$club_from[[i]]
+      already <- rows$player_id == events$player_id[[1]] &
+        rows$season_end == season_end &
+        rows$club == left
+      if (!any(already)) {
+        rows <- rbind(rows, data.frame(
+          player_id = events$player_id[[1]],
+          season_end = season_end,
+          club = left,
+          involvement = "spell_end",
+          stringsAsFactors = FALSE
+        ))
+      }
+    }
+    rows
+  })
+  out <- do.call(rbind, pieces)
+  rownames(out) <- NULL
+  out
+}
+
+senior_squad_tenure <- function(spells) {
+  spells$tenure <- NA_real_
+  if (nrow(spells) == 0) return(spells)
+  spells$player_id <- as.character(spells$player_id)
+  spells$row_id <- seq_len(nrow(spells))
+  for (player in unique(spells$player_id)) {
+    idx <- which(spells$player_id == player)
+    order_idx <- idx[order(spells$season_end[idx], spells$row_id[idx])]
+    state <- list()
+    for (i in order_idx) {
+      club <- spells$club[[i]]
+      involvement <- spells$involvement[[i]]
+      carried <- if (is.null(state[[club]])) 0 else state[[club]]
+      if (involvement == "academy" || involvement == "spell_end") {
+        spells$tenure[[i]] <- NA_real_
+        if (involvement == "spell_end") state[[club]] <- 0
+        next
+      }
+      if (involvement == "full_loan_out") {
+        spells$tenure[[i]] <- 0
+        state[[club]] <- 0
+        next
+      }
+      if (involvement %in% c("senior", "full_loan_in")) {
+        carried <- carried + 1
+        spells$tenure[[i]] <- carried
+        state[[club]] <- carried
+        next
+      }
+      if (involvement %in% c("mid_loan_parent", "mid_loan_in", "mid_move_in", "mid_move_out")) {
+        carried <- carried + 0.5
+        spells$tenure[[i]] <- carried
+        state[[club]] <- if (involvement == "mid_move_out") 0 else carried
+        next
+      }
+      stop("Unknown involvement: ", involvement)
+    }
+  }
+  spells$row_id <- NULL
+  spells
+}
+#+end_src
+
+#+begin_src R :tangle ../notebooks/pl-squad-tenure-points/points.R
+# Results points are 3 for a win and 1 for a draw. Official table points can
+# be lower. The gap is official minus results. Named deductions are the only
+# accepted gaps. Everton 2023-24 is -8: the 10-point deduction was reduced to
+# 6, and the further 2 stood after the club withdrew the appeal.
+
+canonical_club <- function(name) {
+  name <- sub(" [(].*$", "", name)
+  name <- sub(" [Ff][Cc]$", "", name)
+  name <- sub(" [Aa][Ff][Cc]$", "", name)
+  cleaned <- tolower(iconv(enc2utf8(name), to = "ASCII//TRANSLIT"))
+  key <- gsub("[^a-z0-9]", "", cleaned)
+  map <- c(
+    arsenal = "Arsenal",
+    astonvilla = "Aston Villa",
+    barnsley = "Barnsley",
+    birmingham = "Birmingham City",
+    birminghamcity = "Birmingham City",
+    blackburn = "Blackburn Rovers",
+    blackburnrovers = "Blackburn Rovers",
+    blackpool = "Blackpool",
+    bolton = "Bolton Wanderers",
+    boltonwanderers = "Bolton Wanderers",
+    bournemouth = "Bournemouth",
+    afcbournemouth = "Bournemouth",
+    bradford = "Bradford City",
+    bradfordcity = "Bradford City",
+    brentford = "Brentford",
+    brighton = "Brighton and Hove Albion",
+    brightonandhovealbion = "Brighton and Hove Albion",
+    brightonhovealbion = "Brighton and Hove Albion",
+    burnley = "Burnley",
+    cardiff = "Cardiff City",
+    cardiffcity = "Cardiff City",
+    charlton = "Charlton Athletic",
+    charltonath = "Charlton Athletic",
+    charltonathletic = "Charlton Athletic",
+    chelsea = "Chelsea",
+    coventry = "Coventry City",
+    coventrycity = "Coventry City",
+    crystalpalace = "Crystal Palace",
+    derby = "Derby County",
+    derbycounty = "Derby County",
+    everton = "Everton",
+    fulham = "Fulham",
+    huddersfield = "Huddersfield Town",
+    huddersfieldtown = "Huddersfield Town",
+    hull = "Hull City",
+    hullcity = "Hull City",
+    ipswich = "Ipswich Town",
+    ipswichtown = "Ipswich Town",
+    leeds = "Leeds United",
+    leedsunited = "Leeds United",
+    leicester = "Leicester City",
+    leicestercity = "Leicester City",
+    liverpool = "Liverpool",
+    luton = "Luton Town",
+    lutontown = "Luton Town",
+    mancity = "Manchester City",
+    manchestercity = "Manchester City",
+    manunited = "Manchester United",
+    manchesterutd = "Manchester United",
+    manchesterunited = "Manchester United",
+    middlesbrough = "Middlesbrough",
+    newcastle = "Newcastle United",
+    newcastleutd = "Newcastle United",
+    newcastleunited = "Newcastle United",
+    norwich = "Norwich City",
+    norwichcity = "Norwich City",
+    nottmforest = "Nottingham Forest",
+    notthamforest = "Nottingham Forest",
+    nottingham = "Nottingham Forest",
+    nottinghamforest = "Nottingham Forest",
+    portsmouth = "Portsmouth",
+    qpr = "Queens Park Rangers",
+    queensparkrangers = "Queens Park Rangers",
+    reading = "Reading",
+    sheffieldunited = "Sheffield United",
+    sheffieldutd = "Sheffield United",
+    sheffieldwednesday = "Sheffield Wednesday",
+    sheffieldweds = "Sheffield Wednesday",
+    southampton = "Southampton",
+    stoke = "Stoke City",
+    stokecity = "Stoke City",
+    sunderland = "Sunderland",
+    swansea = "Swansea City",
+    swanseacity = "Swansea City",
+    tottenham = "Tottenham Hotspur",
+    tottenhamhotspur = "Tottenham Hotspur",
+    spurs = "Tottenham Hotspur",
+    watford = "Watford",
+    westbrom = "West Bromwich Albion",
+    westbromwichalbion = "West Bromwich Albion",
+    westham = "West Ham United",
+    westhamunited = "West Ham United",
+    wigan = "Wigan Athletic",
+    wiganathletic = "Wigan Athletic",
+    wimbledon = "Wimbledon",
+    wolves = "Wolverhampton Wanderers",
+    wolverhamptonwanderers = "Wolverhampton Wanderers"
+  )
+  if (!key %in% names(map)) stop("Unmapped club: ", name, " key=", key)
+  unname(map[[key]])
+}
+
+named_deductions <- function() {
+  data.frame(
+    club = c("Middlesbrough", "Portsmouth", "Everton", "Nottingham Forest"),
+    season_end = c(1997L, 2010L, 2024L, 2024L),
+    deduction = c(-3L, -9L, -8L, -4L),
+    stringsAsFactors = FALSE
+  )
+}
+
+results_points_from_matches <- function(matches) {
+  if (!all(c("HomeTeam", "AwayTeam", "FTR") %in% names(matches))) {
+    stop("matches need HomeTeam, AwayTeam, and FTR")
+  }
+  home_points <- ifelse(matches$FTR == "H", 3L, ifelse(matches$FTR == "D", 1L, 0L))
+  away_points <- ifelse(matches$FTR == "A", 3L, ifelse(matches$FTR == "D", 1L, 0L))
+  long <- rbind(
+    data.frame(club = matches$HomeTeam, points = home_points, stringsAsFactors = FALSE),
+    data.frame(club = matches$AwayTeam, points = away_points, stringsAsFactors = FALSE)
+  )
+  clubs <- sort(unique(long$club))
+  data.frame(
+    club = clubs,
+    points = vapply(clubs, function(club) sum(long$points[long$club == club]), integer(1)),
+    matches = vapply(clubs, function(club) sum(long$club == club), integer(1)),
+    stringsAsFactors = FALSE
+  )
+}
+
+unexplained_points_gaps <- function(gaps, deductions) {
+  if (!all(c("club", "season_end", "gap") %in% names(gaps))) {
+    stop("gaps need club, season_end, and gap")
+  }
+  explained <- function(i) {
+    if (gaps$gap[[i]] == 0) return(TRUE)
+    hit <- deductions$club == gaps$club[[i]] &
+      deductions$season_end == gaps$season_end[[i]] &
+      deductions$deduction == gaps$gap[[i]]
+    any(hit)
+  }
+  gaps[!vapply(seq_len(nrow(gaps)), explained, logical(1)), , drop = FALSE]
+}
+#+end_src
+
+#+begin_src R :tangle ../notebooks/pl-squad-tenure-points/correlation.R
+# The lead number is the median of defined within-club Pearson correlations.
+# Clubs with fewer than 10 seasons, and clubs whose median tenure does not
+# vary, stay out of that median and are named. The bootstrap redraws seasons
+# inside each club, seed 2026, 2000 replicates, tenure and points kept together.
+
+within_club_correlations <- function(club_seasons, min_seasons = 10L) {
+  clubs <- sort(unique(club_seasons$club))
+  rows <- lapply(clubs, function(club) {
+    d <- club_seasons[club_seasons$club == club, , drop = FALSE]
+    n <- nrow(d)
+    spearman <- NA_real_
+    if (n < min_seasons) {
+      reason <- "fewer than 10 seasons"
+      r <- NA_real_
+      defined <- FALSE
+    } else if (length(unique(d$median_tenure)) < 2) {
+      reason <- "median tenure does not vary"
+      r <- NA_real_
+      defined <- FALSE
+    } else {
+      r <- suppressWarnings(cor(d$median_tenure, d$results_points, method = "pearson"))
+      defined <- is.finite(r)
+      reason <- if (defined) "defined" else "undefined correlation"
+      if (!defined) {
+        r <- NA_real_
+      } else {
+        spearman <- suppressWarnings(cor(d$median_tenure, d$results_points, method = "spearman"))
+        if (!is.finite(spearman)) spearman <- NA_real_
+      }
+    }
+    data.frame(
+      club = club,
+      n_seasons = n,
+      correlation = r,
+      spearman = spearman,
+      defined = defined,
+      reason = reason,
+      stringsAsFactors = FALSE
+    )
+  })
+  out <- do.call(rbind, rows)
+  rownames(out) <- NULL
+  out
+}
+
+lead_summary <- function(correlations) {
+  defined <- correlations[correlations$defined, , drop = FALSE]
+  n_at_least_10 <- sum(correlations$n_seasons >= 10)
+  undefined <- correlations[correlations$n_seasons >= 10 & !correlations$defined, , drop = FALSE]
+  share <- if (n_at_least_10 == 0) NA_real_ else nrow(undefined) / n_at_least_10
+  list(
+    median = if (nrow(defined) == 0) NA_real_ else median(defined$correlation),
+    trimmed_mean = if (nrow(defined) == 0) NA_real_ else mean(defined$correlation, trim = 0.1),
+    spearman = if (nrow(defined) == 0) NA_real_ else median(defined$spearman, na.rm = TRUE),
+    n_defined = nrow(defined),
+    n_at_least_10 = n_at_least_10,
+    undefined_share = share,
+    undefined_clubs = sort(undefined$club),
+    below_min_clubs = sort(correlations$club[correlations$n_seasons < 10])
+  )
+}
+
+undefined_share_sentence <- function(summary) {
+  if (is.na(summary$undefined_share) || summary$undefined_share <= 0.2) {
+    return(NA_character_)
+  }
+  sprintf(
+    "%d of %d clubs with at least 10 seasons are left out of the median, because their correlation is undefined. That is %d%%. The clubs are %s.",
+    length(summary$undefined_clubs),
+    summary$n_at_least_10,
+    round(100 * summary$undefined_share),
+    paste(summary$undefined_clubs, collapse = ", ")
+  )
+}
+
+bootstrap_median_correlation <- function(club_seasons, n_replicates = 2000L, seed = 2026L, min_seasons = 10L) {
+  counts <- table(club_seasons$club)
+  clubs <- sort(names(counts)[counts >= min_seasons])
+  by_club <- lapply(clubs, function(club) {
+    d <- club_seasons[club_seasons$club == club, , drop = FALSE]
+    d[order(d$season_end), , drop = FALSE]
+  })
+  names(by_club) <- clubs
+  set.seed(seed)
+  replicate_medians <- rep(NA_real_, n_replicates)
+  club_draws <- matrix(NA_real_, nrow = n_replicates, ncol = length(clubs))
+  colnames(club_draws) <- clubs
+  for (i in seq_len(n_replicates)) {
+    cors <- numeric()
+    for (j in seq_along(clubs)) {
+      d <- by_club[[j]]
+      drawn <- d[sample.int(nrow(d), nrow(d), replace = TRUE), , drop = FALSE]
+      if (length(unique(drawn$median_tenure)) < 2) next
+      r <- suppressWarnings(cor(drawn$median_tenure, drawn$results_points, method = "pearson"))
+      if (!is.finite(r)) next
+      cors <- c(cors, r)
+      club_draws[i, j] <- r
+    }
+    if (length(cors) > 0) replicate_medians[[i]] <- median(cors)
+  }
+  interval <- as.numeric(quantile(replicate_medians, c(0.025, 0.975), na.rm = TRUE, names = FALSE, type = 7))
+  club_intervals <- data.frame(
+    club = clubs,
+    low = vapply(clubs, function(club) {
+      as.numeric(quantile(club_draws[, club], 0.025, na.rm = TRUE, names = FALSE, type = 7))
+    }, numeric(1)),
+    high = vapply(clubs, function(club) {
+      as.numeric(quantile(club_draws[, club], 0.975, na.rm = TRUE, names = FALSE, type = 7))
+    }, numeric(1)),
+    stringsAsFactors = FALSE
+  )
+  list(
+    replicate_medians = replicate_medians,
+    interval = interval,
+    club_intervals = club_intervals
+  )
+}
+#+end_src
+
+#+begin_src R :tangle ../notebooks/pl-squad-tenure-points/resolution.R
+# The org table is read and not rewritten. A filled row overrides the
+# automatic matcher. match lets the player into the median. exclude keeps
+# the player out. Ambiguous and unmatched players stay out until then.
+# A club-season with any regular still out is absent from the correlation.
+
+apply_org_resolution <- function(regulars, org_table) {
+  regulars$enters <- FALSE
+  regulars$tm_id <- as.character(regulars$tm_id)
+  if (nrow(org_table) > 0) org_table$tm_id <- as.character(org_table$tm_id)
+  for (i in seq_len(nrow(regulars))) {
+    hit <- org_table$season_end == regulars$season_end[[i]] &
+      org_table$club == regulars$club[[i]] &
+      org_table$source_name == regulars$source_name[[i]]
+    if (any(hit)) {
+      row <- org_table[which(hit)[[1]], ]
+      if (row$resolution == "exclude") {
+        regulars$enters[[i]] <- FALSE
+      } else if (row$resolution == "match") {
+        regulars$enters[[i]] <- TRUE
+        regulars$fbref_id[[i]] <- row$fbref_id
+        regulars$tm_id[[i]] <- row$tm_id
+      } else {
+        stop("resolution must be match or exclude")
+      }
+    } else {
+      regulars$enters[[i]] <- regulars$auto_status[[i]] == "unique"
+    }
+  }
+  regulars
+}
+
+club_seasons_blocked_by_unresolved <- function(regulars) {
+  keys <- paste(regulars$club, regulars$season_end, sep = "\r")
+  blocked <- vapply(split(regulars, keys), function(d) any(!d$enters), logical(1))
+  blocked_keys <- names(blocked)[blocked]
+  if (length(blocked_keys) == 0) {
+    return(data.frame(club = character(), season_end = integer(), stringsAsFactors = FALSE))
+  }
+  data.frame(
+    club = sub("\r.*", "", blocked_keys),
+    season_end = as.integer(sub(".*\r", "", blocked_keys)),
+    stringsAsFactors = FALSE
+  )
+}
+#+end_src
+
+#+begin_src R :tangle ../notebooks/pl-squad-tenure-points/plotting.R
+plot_club_seasons <- function(club_seasons, club) {
+  source_dir <- NULL
+  d <- club_seasons[club_seasons$club == club, , drop = FALSE]
+  d <- d[order(d$season_end), , drop = FALSE]
+  r <- suppressWarnings(cor(d$median_tenure, d$results_points, method = "pearson"))
+  d$season_label <- sprintf("%d\u2013%02d", d$season_end - 1L, d$season_end %% 100L)
+  ggplot2::ggplot(d, ggplot2::aes(season_end, results_points)) +
+    ggplot2::geom_line() +
+    ggplot2::geom_point() +
+    ggplot2::scale_x_continuous(
+      name = "Season",
+      breaks = d$season_end,
+      labels = d$season_label
+    ) +
+    ggplot2::labs(
+      y = "Results points",
+      title = club,
+      caption = sprintf("Pearson r = %.6f", r)
+    )
+}
+
+export_club_plot <- function(club_season_file, club, path) {
+  club_seasons <- utils::read.csv(club_season_file, stringsAsFactors = FALSE)
+  plot <- plot_club_seasons(club_seasons, club)
+  dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
+  ggplot2::ggsave(path, plot, width = 8, height = 4.5, device = svglite::svglite)
+  invisible(path)
+}
+#+end_src
+
 * Next action
 
 Planning status is =ready=.
