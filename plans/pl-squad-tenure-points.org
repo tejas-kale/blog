@@ -1,0 +1,215 @@
+#+title: Premier League squad tenure and points
+
+* Status
+
+- Planning status :: ready
+- Delegation gate :: clear
+- Plan owner :: Tejas Kale
+
+The implementing agent records =git rev-parse HEAD= before its first implementation change. The working tree must be clean at that moment. This plan file is the agreed context.
+
+* Aim and intended use
+
+- Question :: Across Premier League club-seasons from 1995–96 through 2025–26, do clubs with a longer current senior-squad streak finish on more points?
+- Intended use :: A short public blog post, published whether the association is strong, weak, or absent.
+- Audience :: Readers of the blog who know a Premier League table and can read a correlation.
+- Population :: Club-seasons in the 31 completed 38-game Premier League seasons from 1995–96 through 2025–26.
+- Decision informed :: Which regular-player cut, if either, the post shows, and how the result is described.
+- This analysis cannot support :: A claim that time together causes points. Money, the manager, injuries, and the schedule remain mixed in with tenure.
+
+* Risk tier
+
+- Tier :: production-or-external
+- Reason :: The result is published. A reader can treat the chart as a finding about Premier League squads. The run keeps a saved copy of the retrieved tables, recomputes points from a second source, and checks one player's tenure by hand.
+
+* Data Understanding Record
+
+| Item | Settled meaning or value | Evidence |
+|------+--------------------------+----------|
+| Source and retrieval | R package =worldfootballR= installed from GitHub (=JaseZiv/worldfootballR=). FBref, through that package, supplies league starts, league appearances, and the league table. Transfermarkt, through =tm_squad_stats=, =tm_team_transfers=, and =tm_player_transfer_history=, supplies senior-squad lists and loan dates. football-data.co.uk season match files supply the independent points total. Each retrieved table is saved with the analysis. | Package docs: https://worldfootballr.sportsdataverse.org/articles/extract-transfermarkt-data.html . FBref 1995–96 player tables include starts: https://fbref.com/en/comps/9/1995-1996/1995-1996-Premier-League-Stats . Python =soccerdata= reads FBref and match files and does not read Transfermarkt. |
+| Population and unit of observation | One row per club-season after the player median is taken. Input grain is one row per player per club per season. | Agreed in the grilling session. |
+| Grain, keys, and cardinality | Analysis key: club + season. Player key inside a club-season: resolved person id. About 20 clubs times 31 seasons before exclusions. A club needs 10 Premier League seasons in the window before its correlation enters the summary. | 1995–96 was the first 20-club, 38-game season (https://www.premierleague.com/en/news/693495). 2025–26 finished on 24 May 2026 (https://www.premierleague.com/en/news/4171848). |
+| Fields and metrics | League starts. League appearances. Senior-squad membership in any division, including a season with no appearances. Loan dates and loan type. Match results, scored as 3 for a win and 1 for a draw. Median tenure of regulars. Within-club Pearson correlation. | Field roles agreed in the grilling session. Transfermarkt squad appearance totals mix competitions, so the regular cut uses the FBref league table only. |
+| Time semantics and window | A season is an English football season, labelled by its two years. Dates are the competition's own dates. No timezone conversion. The window is 1995–96 through 2025–26 inclusive. The 2026–27 season is in progress and stays out. | Same sources as the cardinality row. |
+| Nulls, sentinels, duplicates, and late data | An unresolved player is missing from that club-season median and is counted as unresolved. A missing squad list or missing loan date stops the run. Duplicate name matches are ambiguous until the org resolution table says otherwise. Tables are final tables for completed seasons. | Agreed stop rule. |
+| Filters, exclusions, and join loss | Regulars are two separate cuts: at least 20 league starts, or at least 20 league appearances, out of 38. Exact matches on normalized name, club, and season enter. Ambiguous and unmatched players stay out until the org resolution table assigns them. A club-season with any unresolved regular is flagged and stays out of the correlation until it is resolved. Clubs with fewer than 10 seasons, and clubs whose median tenure does not vary, stay out of the median and are named. | Threshold is more than half of 38, which is 20. |
+| Freshness, coverage, and bias | Retrieval happens at implementation time and is saved. Coverage is the published FBref and Transfermarkt pages for these seasons. Squad lists and loan dates for the 1990s can be thin. The run stops rather than invent a tenure. Scraped pages are analysis inputs. They are not copied into =static/= and are not republished as a dataset. | Terms of each site are checked before a raw snapshot is committed to the public repo. |
+| Reconciliation or plausibility check | Results points for every club-season match a total built from the football-data.co.uk match file. The hand-worked tenure of one player matches the code. | Acceptance rules are in the Verification Contract. |
+
+Internet retrieval, recorded at implementation:
+
+- Canonical pages :: FBref competition pages for each season; Transfermarkt club season URLs passed to =worldfootballR=; football-data.co.uk England Premier League match files, one file per season.
+- Retrieval time :: The time the implementing agent saves the tables.
+- Parameters :: Seasons whose end year runs from 1996 through 2026. League is the Premier League for starts, appearances, and points. Senior-squad and loan lookups follow each regular into other divisions and other clubs.
+- Pagination :: Package calls over club-season URLs. The agent pauses between page loads and saves each response.
+- Revision :: The saved files are the revision. The post cites the retrieval date.
+- Licence :: football-data.co.uk, FBref, and Transfermarkt terms are read at retrieval. Raw vendor tables stay out of the published site until those terms allow the snapshot to sit in the public repo.
+- Known limits :: =worldfootballR= on CRAN lags the GitHub copy. FBref league tables in that package can require a live browser fetch and can fail under load. The saved snapshot is what later runs read.
+
+* Method and assumptions
+
+- Method class :: descriptive
+- Method :: For each club-season, take the regulars under one cut and compute the median of their current senior-squad tenure. For each club, compute the Pearson correlation between that median and results points across its seasons in the window. The lead number is the median of those club correlations. A 10% trimmed mean of the same correlations is computed beside it. Spearman is reported as a point value and is not bootstrapped.
+- Assumptions :: A season in the senior squad counts as shared time with that club's group, including a season with no appearances and a season outside the Premier League. A full season on loan breaks that shared time. Results points measure the season's on-pitch outcome. The clubs in the window are the whole population, so the bootstrap redraws seasons inside each club.
+- Limits :: The association is descriptive. Two regular cuts are both computed. The post shows starts, appearances, or both only after Tejas chooses. The agent does not choose the chart.
+
+Tenure rules the code must implement:
+
+- A season adds 1 when the player was in that club's senior squad, in any division, including a season with zero appearances.
+- Years only in the academy add nothing and leave the streak unchanged.
+- A full season on loan means the player is absent from the parent senior squad for that whole season. The parent gets 0. The earlier run is wiped. A later return starts at 1.
+- A mid-season loan means the player is in the parent senior squad and in another club's senior squad in the same season. Each of those clubs gets 0.5. The parent streak stays in place. The next full season at the parent adds 1 on top of the 0.5.
+- A mid-season permanent move adds 0.5 at the club they left and 0.5 at the club they joined. The streak at the club they left ends. A later return there starts at 1.
+- If one season lists two loan clubs, the parent gets 0.5 once and each loan club gets 0.5.
+- The same tenure is used for both regular cuts. The cuts differ only in who enters the median.
+
+Uncertainty:
+
+- 2000 replicates, seed 2026.
+- Each replicate redraws a club's seasons with replacement and keeps that season's tenure and points together.
+- It recomputes each club correlation, then the median across clubs.
+- The 95% interval is the 2.5th and 97.5th percentiles.
+- A replicate that makes a club's tenure constant leaves that club out of that replicate's median.
+- Each plotted club's interval is the percentiles of its own recomputed correlation.
+
+Summary rule:
+
+- The post leads with the median of defined club correlations.
+- Clubs with undefined correlations are excluded from the median and from the trimmed mean, and they are named.
+- The trimmed mean drops the lowest 10% and the highest 10% of defined correlations, then takes the mean. It lives in the notebook.
+- When undefined clubs are more than 20% of clubs with at least 10 seasons, the opening paragraph of the post states that share.
+
+* Decision Ledger
+
+| Decision | Reason | Alternatives rejected | Consequence |
+|----------+--------+-----------------------+-------------|
+| Describe the association | The blog can show whether tenure and points move together | A causal claim about time together | The post states the limit in the Aim section |
+| Results points only | On-pitch outcomes are wins and draws | Official table points; goals scored | Deductions appear in a note, not in the plotted total |
+| 38-game seasons only | Raw points then share one scale, and the window is already 31 seasons | Points per game across 42-game seasons | 1992–93 through 1994–95 stay out |
+| Within-club correlations | The question is whether a club's own settled seasons coincide with its own points | One pooled cloud of every club-season | Rich settled clubs do not set the single slope |
+| Median tenure of regulars | Agreed exposure | Pairwise shared seasons | Pairwise overlap is out of this post |
+| Senior-squad streak, with the loan and move rules above | Tenure should follow time at the club, and a full loan breaks it | Cumulative Premier League appearances only; academy years | Tenure can rise during a Championship season |
+| Both regular cuts computed, chart chosen later | Starts and appearances can disagree | Publishing both, or one, before seeing them | Tejas judges the post after both results exist |
+| Median is always the lead number | The median already resists edge clubs. Undefined clubs are already removed from both summaries | Switching the lead number to a trimmed mean when the drop rate passes 20% or 40% | A drop rate above 20% changes the opening sentence, not the statistic |
+| R and =worldfootballR= | One maintained package reads FBref and Transfermarkt | Python =soccerdata=, which does not read Transfermarkt | The CRAN package is not the install |
+| Org tables resolve identity | Automatic name matching will be wrong in places Tejas can see | Letting the agent pick among ambiguous ids | Unresolved club-seasons stay out of the correlation |
+| Bootstrap seasons inside clubs | These clubs are the population | Resampling clubs as if they were a sample | The interval is season-to-season uncertainty |
+
+* Verification Contract
+
+| Claim | Evidence | Acceptance rule | Independence | Human action |
+|-------+----------+-----------------+--------------+--------------|
+| Results points equal 3 per win and 1 per draw | Club-season totals from the analysis and from the football-data.co.uk match file | Every club-season matches, or the gap equals a named deduction | The match file is a second source, not the FBref table | Tejas reads the deduction note against the seasons listed below |
+| Named deductions are the only gaps | Published deduction records | Middlesbrough 1996–97 is −3. Portsmouth 2009–10 is −9. Everton 2023–24 is the deduction that stood after appeal. Nottingham Forest 2023–24 is −4. Any other gap fails the check | Records are league and news statements, not the match file | Tejas confirms the Everton total that stood, because a second deduction was appealed |
+| One player's tenure matches Transfermarkt | A hand-worked season-by-season streak saved beside the code | The code reproduces every season in that sheet, including loans, Championship seasons, unused seasons, and mid-season 0.5 seasons | The sheet is written from the Transfermarkt pages, not from the code output | Tejas checks the sheet against the pages |
+| Regulars are at least 20 starts or 20 appearances | A tiny fixture of counts 19, 20, and 21 | 19 is out. 20 and 21 are in. The two cuts are separate | The fixture is hand-written | Tejas reviews the fixture once |
+| The median and the interval follow the Decision Ledger | A second R script recomputes the median, the trimmed mean, and one bootstrap percentile from the saved club-season table | The lead numbers match the notebook | The script does not call the notebook's correlation function | Tejas compares the two outputs |
+| Unresolved players do not enter a median | The flag list and the org resolution table | A club-season with an unresolved regular is absent from the correlation input. After the org table resolves it, the row can enter | The flag is a count of resolution-table misses, not a reread of the matcher | Tejas fills the org table |
+
+Known deduction sources: Middlesbrough and Portsmouth are documented by the BBC (https://www.bbc.com/sport/football/67448714) and The Guardian (https://www.theguardian.com/football/2023/nov/20/everton-docked-points-sunderland-manchester-united-arsenal-middlesbrough-portsmouth). Everton's 10-point deduction reduced on appeal to 6, and a further immediate 2-point deduction was announced in April 2024 (https://www.bbc.com/sport/football/67448714, https://www.premierleague.com/en/news/3960088). Forest's 4-point deduction was upheld (https://www.bbc.com/sport/football/articles/cd13r56z21xo).
+
+* Human review boundary
+
+** Claim-critical logic
+
+- The tenure streak, including full-season loans, mid-season 0.5 seasons, Championship seasons, and unused senior seasons.
+- The regular cut at 20 starts and at 20 appearances.
+- The player match and the reading of the org resolution table.
+- Results points, and the comparison with the match file.
+- The within-club Pearson correlation, the median, the trimmed mean, the undefined-club share, and the bootstrap.
+- The plotted points, the season axis, and the sentence that states the undefined share.
+
+** Human-review-critical logic
+
+- Tenure rules. A wrong loan wipe or a wrong 0.5 still produces a plausible median.
+- The org resolution table and any club-season that was flagged. A wrong id still produces a plausible streak.
+- The hand-worked player sheet.
+- The deduction note.
+- Which regular cut the post shows.
+- The chart and the opening paragraph. Axis choice, the 20% sentence, and which cut is drawn can change the reading while looking finished.
+
+These blocks live in this org file as source blocks when they are implemented. The tangled R is generated from those blocks.
+
+** Logic excluded from human review
+
+- Saving a retrieved table to disk, once the verification contract has accepted the points total and the tenure sheet.
+- Plot theme and file export that do not change the data, the axis variable, or the quoted correlation.
+- Package install and the pause between page loads.
+
+Plausible failure of the export :: a plot file is written from a stale table. Oracle :: the export test reads the same saved club-season file the verification script uses and checks the plotted correlation against that file. Fault probe :: change one club's correlation in a fixture and expect the test to fail. The verification command runs that test.
+
+* Review Map
+
+| Question | Org heading or block | Evidence or test | Expected invariant | Consequence if wrong |
+|----------+----------------------+------------------+--------------------+----------------------|
+| Are these the 31 seasons, and are points results points? | Data Understanding Record | Match-file reconciliation | 380 matches per season; points gaps equal named deductions only | A season is mis-scaled or a deduction is plotted as form |
+| Who is a regular under each cut? | Method, regular fixture | Counts 19, 20, 21 | 20 is the minimum | The median describes a different group of players |
+| Does tenure follow the streak rules? | Method, tenure rules | Hand-worked player sheet | Code matches every worked season | The exposure is a different quantity from the one agreed |
+| Did ambiguous players stay out until the org table resolved them? | Verification Contract | Flag list | Unresolved club-seasons are absent from the correlation input | A wrong person contributes years |
+| Is the lead number the median of defined within-club correlations? | Method, second R script | Notebook output and second script | The two medians match, and undefined clubs are named | The post quotes a different summary |
+| Does the interval redraw seasons inside clubs? | Method, uncertainty | Bootstrap settings and one percentile check | Seed 2026, 2000 replicates, pair kept together | The shaded range answers a different question |
+| Does the opening paragraph state the undefined share when it exceeds 20%? | Summary rule | Count of undefined clubs over clubs with at least 10 seasons | The sentence appears only above that share, and the lead number stays the median | Readers either miss a large omission or think the statistic changed |
+| Which cut does the post show? | Aim, decision informed | Tejas's note in this file after both results exist | The agent does not choose | The published chart is the cut Tejas did not want |
+
+* Reproducible execution
+
+- Environment and dependencies :: R. =worldfootballR= from GitHub (=remotes::install_github("JaseZiv/worldfootballR")=). The CRAN build is not sufficient. Other R packages are declared in the implementation's dependency file when they are used.
+- Tangle and run :: Human-review-critical R lives in source blocks in this file and tangles to =notebooks/pl-squad-tenure-points/=. Tangle command: =emacs --batch --eval "(require 'ob-tangle)" --eval "(org-babel-tangle-file \"plans/pl-squad-tenure-points.org\")"=. The blog post, when written, is =content/posts/pl-squad-tenure-points.md=. Charts served by the site go under =static/pl-squad-tenure-points/=. Raw vendor tables do not.
+- Parameters and date ranges :: Season end years 1996 through 2026. Regular threshold 20 of 38. Minimum seasons per club 10. Trim 10% each tail. Undefined-share sentence at more than 20%.
+- Randomness :: Bootstrap seed 2026, 2000 replicates. The seed is the only randomness.
+- Generated artefacts :: Saved retrieval tables; the org resolution table; the hand-worked tenure sheet; the club-season analysis table; the correlation table for both cuts; the bootstrap intervals; the ten club plots; the tangled R files.
+- Verification command :: The implementation adds one R script that runs the Verification Contract checks and exits non-zero on failure. The command is recorded here when that script exists.
+
+Org resolution table, which Tejas edits and the code only reads:
+
+- Columns :: season, club, source name, FBref id, Transfermarkt id, resolution (=match= or =exclude=), note.
+- Authority :: a filled row overrides the automatic matcher. The code does not rewrite this table.
+- Staging :: the agent may write a separate list of ambiguous rows. Tejas copies the ones he decides into the authority table.
+
+* Return Contract
+
+** Required from the implementing agent
+
+- Implemented outcome.
+- Data version or retrieval evidence.
+- Checks run and their results.
+- Unresolved or changed assumptions.
+- Completed Review Map.
+- Human-review-critical Org block locations.
+- Generated artefacts and drift check.
+- Claims the agent cannot verify for the user.
+- Git review baseline and final commit SHA.
+
+** Implementation results
+
+The implementing agent completes this section without silently changing the agreed plan.
+
+* Unknowns and out of scope
+
+** Blocking unknowns
+
+None.
+
+** Bounded unknowns
+
+- Everton's 2023–24 deduction after the appeal of the second penalty. Bound :: the points check fails unless the gap equals the deduction that stood. Risk :: the note quotes 8 points when the appeal changed it. Check :: the Verification Contract deduction row. Owner :: Tejas.
+- Completeness of 1990s Transfermarkt squad lists and loan dates. Bound :: a missing list or a missing date stops the run. Risk :: the window shortens or a club-season is dropped. Check :: the stop report names the page. Owner :: the implementing agent reports it; Tejas decides whether to narrow the window.
+- Site terms for committing raw snapshots. Bound :: raw vendor tables stay out of =static/= and out of the public repo until the terms are read. Risk :: a commit redistributes a scrape. Check :: the retrieval note records the terms decision before any raw file is added. Owner :: Tejas.
+- =worldfootballR= FBref fetches that need a live browser. Bound :: a failed fetch is retried and then stopped. Risk :: the snapshot is incomplete. Check :: every season in the window has a saved player table before correlations are computed. Owner :: the implementing agent.
+
+** Deferred choices and out of scope
+
+- Pairwise shared seasons.
+- Minutes as the regular cut.
+- Goals scored, goal difference, and league position.
+- Seasons before 1995–96 and the in-progress 2026–27 season.
+- Choosing which regular cut the post shows. That choice waits until both results exist.
+- A causal model, a club fixed-effect regression beyond the within-club correlation, and any claim about chemistry.
+
+* Next action
+
+Planning status is =ready=.
+
+This plan is the agreed artefact. =/to-spec= and =/to-tickets= are not required to start implementation. No issue tracker is configured in this repo. Those skills, if used later, start with =/setup-matt-pocock-skills=, then =/to-spec=, then =/to-tickets=. In a later conversation, the implementing agent reads this whole file and treats it as agreed context before any code change.
+
+The implementing agent records =git rev-parse HEAD= on a clean tree, then implements. After implementation, Tejas runs =/code-review= against that baseline, follows the Review Map, and performs the human actions in the Verification Contract.
