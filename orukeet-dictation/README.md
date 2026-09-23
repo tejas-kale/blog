@@ -11,7 +11,7 @@ On the Mac:
 ./scripts/run.sh
 ```
 
-Hold Right Option in any text field, speak, and release. The tests, which do not need a Mac:
+Hold Right Option in any text field, speak, and release. The transcript is cleaned by Qwen2.5 0.5B, then pasted. Set `ORUKEET_CLEANUP=0` to skip that step. The tests, which do not need a Mac:
 
 ```bash
 python3 -m unittest discover -s tests -v

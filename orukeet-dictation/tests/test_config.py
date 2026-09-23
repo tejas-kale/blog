@@ -17,12 +17,14 @@ class ConfigTests(unittest.TestCase):
                 "ORUKEET_TRAILING_SPACE": "false",
                 "ORUKEET_SERVER_URL": "http://127.0.0.1:9000",
                 "ORUKEET_SPAWN_SERVER": "no",
+                "ORUKEET_CLEANUP": "no",
             }
         )
         self.assertEqual(config.hotkey_code, GLOBE)
         self.assertEqual(config.max_seconds, 120)
         self.assertFalse(config.trailing_space)
         self.assertFalse(config.spawn_server)
+        self.assertFalse(config.cleanup)
         self.assertEqual(config.server_url, "http://127.0.0.1:9000")
 
     def test_default_hotkey(self) -> None:

@@ -33,6 +33,7 @@ class DictationApp:
         self.busy = False
         self.hotkey = None
         self.server = None
+        self.cleaner = None
 
     def run(self) -> None:
         from AppKit import NSApplication, NSApplicationActivationPolicyAccessory
@@ -86,7 +87,10 @@ class DictationApp:
 
             try:
                 result = transcribe(self.config.server_url, wav)
-                text = prepare_text(str(result.get("text", "")), self.config.trailing_space)
+                raw = str(result.get("text", ""))
+                if self.cleaner is not None:
+                    raw = self.cleaner.clean(raw)
+                text = prepare_text(raw, self.config.trailing_space)
                 if text:
                     AppHelper.callLater(0, insert_text, text)
                     log(f"inserted {len(text)} characters")
@@ -116,6 +120,16 @@ class DictationApp:
                 log(f"Orukeet server is not ready: {exc}")
                 AppHelper.callLater(0, AppHelper.stopEventLoop)
                 return
+            if self.config.cleanup:
+                from dictation.cleanup import Cleaner
+
+                self.cleaner = Cleaner(self.config.cleanup_model)
+                try:
+                    log("loading the cleanup model")
+                    self.cleaner.load()
+                except Exception as exc:  # noqa: BLE001
+                    self.cleaner = None
+                    log(f"cleanup model unavailable, pasting the transcript as heard: {exc}")
 
             def arm() -> None:
                 self.hotkey = HotkeyMonitor(self.config.hotkey_code, self.begin, self.finish)

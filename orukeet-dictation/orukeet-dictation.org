@@ -23,10 +23,12 @@ Recognition is [[https://huggingface.co/oruk/orukeet][Orukeet]], running on the 
 
 On an 8 GB M1 MacBook Air, use the native Q8 weights. That file is about 714 MB. The warm worker wants roughly 1.5–2.5 GB of unified memory. Run one worker. Recordings stop at 60 seconds. Orukeet's fast Metal path covers clips up to about 41 seconds; longer clips still transcribe.
 
+After Orukeet returns text, a second model turns the spoken wording into a written sentence: fillers and false starts come out, punctuation goes in. The model is [[https://huggingface.co/mlx-community/Qwen2.5-0.5B-Instruct-4bit][Qwen2.5-0.5B-Instruct]] in a 4-bit MLX build, about 278 MB on disk and under 1 GB once loaded for a short clip. A 3B model at the same precision already peaks near 2 GB on an M1 Air, which is too much beside Orukeet. The 0.5B model is the same kind of size as Orukeet, and it only has to edit a sentence it has already been given.
+
 Two programs cooperate:
 
 1. =server/orukeet_server.py= loads Orukeet and answers HTTP on =127.0.0.1:8765=.
-2. =python -m dictation= watches the key, records, posts the WAV, and pastes the text.
+2. =python -m dictation= watches the key, records, posts the WAV, cleans the transcript, and pastes the text.
 
 Audio stays on localhost. PyObjC is how Python calls the macOS functions for the key, the microphone, and Command-V. Those imports sit inside the functions that need them, so the rest of the package imports on Linux and the tests can run there.
 
@@ -167,6 +169,8 @@ class Config:
     spawn_server: bool = True
     server_script: str | None = None
     installation: str | None = None
+    cleanup: bool = True
+    cleanup_model: str = "mlx-community/Qwen2.5-0.5B-Instruct-4bit"
 
     @classmethod
     def from_env(cls, environment: dict[str, str] | None = None) -> Config:
@@ -186,6 +190,8 @@ class Config:
             spawn_server=truthy(env.get("ORUKEET_SPAWN_SERVER"), True),
             server_script=env.get("ORUKEET_SERVER_SCRIPT"),
             installation=env.get("ORUKEET_INSTALLATION"),
+            cleanup=truthy(env.get("ORUKEET_CLEANUP"), True),
+            cleanup_model=env.get("ORUKEET_CLEANUP_MODEL", "mlx-community/Qwen2.5-0.5B-Instruct-4bit"),
         )
 #+end_src
 
@@ -208,12 +214,14 @@ class ConfigTests(unittest.TestCase):
                 "ORUKEET_TRAILING_SPACE": "false",
                 "ORUKEET_SERVER_URL": "http://127.0.0.1:9000",
                 "ORUKEET_SPAWN_SERVER": "no",
+                "ORUKEET_CLEANUP": "no",
             }
         )
         self.assertEqual(config.hotkey_code, GLOBE)
         self.assertEqual(config.max_seconds, 120)
         self.assertFalse(config.trailing_space)
         self.assertFalse(config.spawn_server)
+        self.assertFalse(config.cleanup)
         self.assertEqual(config.server_url, "http://127.0.0.1:9000")
 
     def test_default_hotkey(self) -> None:
@@ -1084,13 +1092,205 @@ if __name__ == "__main__":
     unittest.main()
 #+end_src
 
+* Spoken words, written sentence
+
+Orukeet writes down what it heard, including the parts you would not type. "Um, I want to, I want the report" should become "I want the report." The small language model does that edit. It must leave the speaker's words alone: no summary, no synonym, no new fact.
+
+A 0.5B model will sometimes ignore that instruction. The guard in this module is what we trust. =apply_cleanup= keeps the model's line only when every word it produced already belongs to the transcript (after expanding a few spoken forms such as "gonna" into "going to"), the words stay in order, and it has not thrown away most of the sentence. Anything else is pasted as Orukeet wrote it.
+
+=Cleaner= loads the MLX weights once. =mlx_lm= is imported inside =load=, so this file imports on a machine that does not have MLX. The first launch downloads about 278 MB into the Hugging Face cache.
+
+#+begin_src python :tangle dictation/cleanup.py
+"""Turn a speech transcript into a written sentence, without paraphrasing it."""
+
+from __future__ import annotations
+
+import re
+
+DEFAULT_MODEL = "mlx-community/Qwen2.5-0.5B-Instruct-4bit"
+
+SYSTEM = (
+    "Turn the speech transcript into one written sentence. "
+    "Remove filler words such as um, uh, and erm. "
+    "Remove false starts and immediate repetitions. "
+    "Add punctuation and capitalization. "
+    "Keep the speaker's words. "
+    "Do not summarize. Do not add words. Do not substitute synonyms. "
+    "Reply with the written sentence only."
+)
+
+# Spoken forms the model may expand. The guard treats the expansion as the same words.
+SPOKEN = {
+    "gonna": ("going", "to"),
+    "wanna": ("want", "to"),
+    "kinda": ("kind", "of"),
+    "gotta": ("got", "to"),
+    "yeah": ("yes",),
+    "yep": ("yes",),
+    "nope": ("no",),
+}
+FILLERS = {"um", "uh", "uhh", "erm", "hmm", "ah", "eh", "mm"}
+
+
+def apply_cleanup(original: str, model_output: str) -> str:
+    cleaned = _model_line(model_output)
+    if cleaned and _faithful(original, cleaned):
+        return cleaned
+    return original.strip()
+
+
+def _model_line(raw: str) -> str:
+    text = raw.strip().strip('"').strip("'")
+    for prefix in ("written:", "cleaned:", "output:", "transcript:"):
+        if text.lower().startswith(prefix):
+            text = text[len(prefix):].strip()
+    line = next((part.strip() for part in text.splitlines() if part.strip()), "")
+    return line.strip('"').strip()
+
+
+def _tokens(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9']+", text.lower())
+
+
+def _spoken_words(text: str) -> list[str]:
+    words: list[str] = []
+    for token in _tokens(text):
+        if token in FILLERS:
+            continue
+        words.extend(SPOKEN.get(token, (token,)))
+    return words
+
+
+def _faithful(original: str, cleaned: str) -> bool:
+    source = _spoken_words(original)
+    written = _tokens(cleaned)
+    if not source or not written:
+        return False
+    if any(word not in source for word in written):
+        return False
+    if _lcs_length(source, written) != len(written):
+        return False
+    return len(written) >= max(1, int(0.5 * len(source)))
+
+
+def _lcs_length(left: list[str], right: list[str]) -> int:
+    previous = [0] * (len(right) + 1)
+    for word in left:
+        current = [0]
+        for index, other in enumerate(right):
+            if word == other:
+                current.append(previous[index] + 1)
+            else:
+                current.append(max(previous[index + 1], current[-1]))
+        previous = current
+    return previous[-1]
+
+
+class Cleaner:
+    def __init__(self, model_id: str = DEFAULT_MODEL) -> None:
+        self.model_id = model_id
+        self._model = None
+        self._tokenizer = None
+
+    def load(self) -> None:
+        from mlx_lm import load
+
+        self._model, self._tokenizer = load(self.model_id)
+
+    def clean(self, transcript: str) -> str:
+        if self._model is None or not transcript.strip():
+            return transcript.strip()
+        try:
+            rewritten = self._generate(transcript.strip())
+        except Exception:
+            return transcript.strip()
+        return apply_cleanup(transcript, rewritten)
+
+    def _generate(self, transcript: str) -> str:
+        from mlx_lm import generate
+
+        tokenizer = self._tokenizer
+        messages = [
+            {"role": "system", "content": SYSTEM},
+            {"role": "user", "content": transcript},
+        ]
+        if getattr(tokenizer, "chat_template", None):
+            prompt = tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True
+            )
+        else:
+            prompt = f"{SYSTEM}\n\nTranscript:\n{transcript}\n\nWritten:\n"
+        max_tokens = max(32, min(128, 2 * len(_tokens(transcript)) + 16))
+        return generate(
+            self._model,
+            tokenizer,
+            prompt=prompt,
+            max_tokens=max_tokens,
+            verbose=False,
+        )
+#+end_src
+
+The tests pass a fake model output into =apply_cleanup=. They never load Qwen.
+
+#+begin_src python :tangle tests/test_cleanup.py
+"""The cleanup guard keeps the speaker's words."""
+
+from __future__ import annotations
+
+import unittest
+
+from dictation.cleanup import DEFAULT_MODEL, apply_cleanup
+
+
+class CleanupTests(unittest.TestCase):
+    def test_drops_fillers_and_a_false_start(self) -> None:
+        original = "um I want to I want the report"
+        self.assertEqual(
+            apply_cleanup(original, "I want the report."),
+            "I want the report.",
+        )
+
+    def test_allows_gonna_to_become_going_to(self) -> None:
+        self.assertEqual(
+            apply_cleanup("I'm gonna go now", "I'm going to go now."),
+            "I'm going to go now.",
+        )
+
+    def test_rejects_a_paraphrase(self) -> None:
+        original = "I want the report"
+        self.assertEqual(
+            apply_cleanup(original, "I need the document."),
+            original,
+        )
+
+    def test_rejects_a_summary_and_an_empty_reply(self) -> None:
+        original = "I want the report about the budget for next year and the hiring plan"
+        self.assertEqual(apply_cleanup(original, "I want a budget report."), original)
+        self.assertEqual(apply_cleanup(original, "   "), original)
+
+    def test_strips_a_label_the_model_added(self) -> None:
+        self.assertEqual(
+            apply_cleanup("uh send the file", "Written: Send the file."),
+            "Send the file.",
+        )
+
+    def test_default_model_is_the_half_billion_mlx_build(self) -> None:
+        self.assertEqual(DEFAULT_MODEL, "mlx-community/Qwen2.5-0.5B-Instruct-4bit")
+
+
+if __name__ == "__main__":
+    unittest.main()
+#+end_src
+
 * The agent
 
-This is the module you run. It owns one recorder, one hotkey, and the worker process.
+This is the module you run. It owns one recorder, one hotkey, the Orukeet worker, and the cleanup model.
 
 AppKit wants a run loop on the main thread. That loop is what delivers hotkey events and shows permission dialogs. Transcription can take a second. If we did it on the main thread, the loop would stall. =finish= reads the WAV on the main thread (that part is quick), then a background thread calls the worker. =AppHelper.callLater= posts the paste back to the main thread, because the clipboard and Command-V belong there.
 
 =busy= ignores a new press while the previous clip is still in flight. One worker, one clip.
+
+=setup= loads Qwen once, before the hotkey is armed, so the first sentence does not wait on a download. If that load fails, dictation still pastes Orukeet's text. =finish= cleans on the background thread, next to the HTTP call, then posts the paste back to the main thread.
 
 The activation policy =Accessory= means no Dock icon and no window. The terminal you started is the app macOS will ask for permissions.
 
@@ -1129,6 +1329,7 @@ class DictationApp:
         self.busy = False
         self.hotkey = None
         self.server = None
+        self.cleaner = None
 
     def run(self) -> None:
         from AppKit import NSApplication, NSApplicationActivationPolicyAccessory
@@ -1182,7 +1383,10 @@ class DictationApp:
 
             try:
                 result = transcribe(self.config.server_url, wav)
-                text = prepare_text(str(result.get("text", "")), self.config.trailing_space)
+                raw = str(result.get("text", ""))
+                if self.cleaner is not None:
+                    raw = self.cleaner.clean(raw)
+                text = prepare_text(raw, self.config.trailing_space)
                 if text:
                     AppHelper.callLater(0, insert_text, text)
                     log(f"inserted {len(text)} characters")
@@ -1212,6 +1416,16 @@ class DictationApp:
                 log(f"Orukeet server is not ready: {exc}")
                 AppHelper.callLater(0, AppHelper.stopEventLoop)
                 return
+            if self.config.cleanup:
+                from dictation.cleanup import Cleaner
+
+                self.cleaner = Cleaner(self.config.cleanup_model)
+                try:
+                    log("loading the cleanup model")
+                    self.cleaner.load()
+                except Exception as exc:  # noqa: BLE001
+                    self.cleaner = None
+                    log(f"cleanup model unavailable, pasting the transcript as heard: {exc}")
 
             def arm() -> None:
                 self.hotkey = HotkeyMonitor(self.config.hotkey_code, self.begin, self.finish)
@@ -1242,6 +1456,7 @@ from __future__ import annotations
 import unittest
 
 import dictation.agent
+import dictation.cleanup
 import dictation.hotkey
 import dictation.paste
 import dictation.record
@@ -1264,7 +1479,7 @@ On the Mac, with Python 3.12:
 : ./scripts/install-orukeet.sh
 : ./scripts/run.sh
 
-=install-orukeet.sh= creates a virtualenv, installs the Orukeet wheel, installs PyObjC on macOS, and writes =installation.json= for the Q8 model. =run.sh= starts the agent, which starts the worker.
+=install-orukeet.sh= creates a virtualenv, installs the Orukeet wheel, installs PyObjC and =mlx-lm= on macOS, and writes =installation.json= for the Q8 model. =run.sh= starts the agent, which starts the worker and loads Qwen. The Qwen weights download on first launch. Set =ORUKEET_CLEANUP=0= to paste Orukeet's text with no rewrite.
 
 Grant Microphone and Accessibility to the terminal you launched from. That terminal is the app macOS sees. Click a text field, hold Right Option, speak, release.
 
@@ -1273,12 +1488,14 @@ Grant Microphone and Accessibility to the terminal you launched from. That termi
 PyObjC is macOS-only. The worker wheel is separate so the tests can install nothing and still import the stdlib modules.
 
 #+begin_src text :tangle requirements.txt :comments no
-# macOS only. Python bindings for the hotkey, the microphone, and Command-V.
+# macOS only. PyObjC is the hotkey, the microphone, and Command-V.
+# mlx-lm runs the 0.5B cleanup model on Apple silicon.
 pyobjc-core>=10.3
 pyobjc-framework-Cocoa>=10.3
 pyobjc-framework-Quartz>=10.3
 pyobjc-framework-AVFoundation>=10.3
 pyobjc-framework-ApplicationServices>=10.3
+mlx-lm>=0.18
 #+end_src
 
 #+begin_src text :tangle server/requirements.txt :comments no
@@ -1301,7 +1518,7 @@ python -m pip install -r server/requirements.txt
 if [[ "$(uname -s)" == "Darwin" ]]; then
   python -m pip install -r requirements.txt
 else
-  echo "Skipping PyObjC. The dictation agent itself runs on macOS." >&2
+  echo "Skipping PyObjC and mlx-lm. The dictation agent itself runs on macOS." >&2
 fi
 
 # Q8 weights are about 714 MB. One worker fits an 8 GB MacBook Air.
@@ -1390,7 +1607,7 @@ On the Mac:
 ./scripts/run.sh
 ```
 
-Hold Right Option in any text field, speak, and release. The tests, which do not need a Mac:
+Hold Right Option in any text field, speak, and release. The transcript is cleaned by Qwen2.5 0.5B, then pasted. Set `ORUKEET_CLEANUP=0` to skip that step. The tests, which do not need a Mac:
 
 ```bash
 python3 -m unittest discover -s tests -v

@@ -6,6 +6,7 @@ from __future__ import annotations
 import unittest
 
 import dictation.agent
+import dictation.cleanup
 import dictation.hotkey
 import dictation.paste
 import dictation.record

@@ -14,7 +14,7 @@ python -m pip install -r server/requirements.txt
 if [[ "$(uname -s)" == "Darwin" ]]; then
   python -m pip install -r requirements.txt
 else
-  echo "Skipping PyObjC. The dictation agent itself runs on macOS." >&2
+  echo "Skipping PyObjC and mlx-lm. The dictation agent itself runs on macOS." >&2
 fi
 
 # Q8 weights are about 714 MB. One worker fits an 8 GB MacBook Air.
