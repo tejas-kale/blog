@@ -210,6 +210,6 @@ None.
 
 Planning status is =ready=.
 
-This plan is the agreed artefact. =/to-spec= and =/to-tickets= are not required to start implementation. No issue tracker is configured in this repo. Those skills, if used later, start with =/setup-matt-pocock-skills=, then =/to-spec=, then =/to-tickets=. In a later conversation, the implementing agent reads this whole file and treats it as agreed context before any code change.
+This plan is the agreed artefact. =/to-spec= and =/to-tickets= are not required to start implementation. Issues for this repo live in GitHub Issues on =tejas-kale/blog=. The engineering-skills config files under =docs/agents/= are not written yet. Publishing a spec or tickets with those skills starts with =/setup-matt-pocock-skills=, then =/to-spec=, then =/to-tickets=. In a later conversation, the implementing agent reads this whole file and treats it as agreed context before any code change.
 
 The implementing agent records =git rev-parse HEAD= on a clean tree, then implements. After implementation, Tejas runs =/code-review= against that baseline, follows the Review Map, and performs the human actions in the Verification Contract.
