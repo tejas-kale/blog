@@ -1,5 +1,4 @@
-# macOS only. These are Python bindings for the Apple frameworks the agent
-# uses to watch a hotkey, record the mic, and paste. They do not install on Linux.
+# macOS only. Python bindings for the hotkey, the microphone, and Command-V.
 pyobjc-core>=10.3
 pyobjc-framework-Cocoa>=10.3
 pyobjc-framework-Quartz>=10.3

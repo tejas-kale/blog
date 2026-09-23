@@ -1,16 +1,10 @@
-"""Paste text into whatever app is focused, then put the clipboard back.
-
-Wispr Flow does the same thing: copy the transcript, press Command-V, wait
-a moment, and restore what was on the clipboard before. The V key is the
-physical key code 9, so this still pastes on a non-US keyboard layout.
-"""
+# [[file:../orukeet-dictation.org::*Pasting into the focused app][Pasting into the focused app:1]]
+"""Paste text into the focused app, then restore the clipboard."""
 
 from __future__ import annotations
 
-# kVK_ANSI_V. Do not look this up from the letter "v"; layouts such as
-# Dvorak and AZERTY move that letter to a different physical key.
+# Physical V key. Command-V follows this key, whichever letter the layout paints on it.
 PASTE_KEY_CODE = 9
-
 TRANSIENT_TYPE = "org.nspasteboard.TransientType"
 CONCEALED_TYPE = "org.nspasteboard.ConcealedType"
 
@@ -28,7 +22,7 @@ def insert_text(text: str) -> None:
     pasteboard.setData_forType_(empty, TRANSIENT_TYPE)
     pasteboard.setData_forType_(empty, CONCEALED_TYPE)
     stamp = int(pasteboard.changeCount())
-    _send_command_v()
+    _press_command_v()
     AppHelper.callLater(0.2, _restore, pasteboard, saved, stamp)
 
 
@@ -60,7 +54,7 @@ def _restore(pasteboard, saved: list[dict], stamp: int) -> None:
         pasteboard.writeObjects_(items)
 
 
-def _send_command_v() -> None:
+def _press_command_v() -> None:
     from Quartz import (
         CGEventCreateKeyboardEvent,
         CGEventPost,
@@ -78,3 +72,4 @@ def _send_command_v() -> None:
     CGEventSetFlags(up, kCGEventFlagMaskCommand)
     CGEventPost(kCGHIDEventTap, down)
     CGEventPost(kCGHIDEventTap, up)
+# Pasting into the focused app:1 ends here

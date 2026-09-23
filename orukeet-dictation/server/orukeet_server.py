@@ -1,9 +1,5 @@
-"""Keep one Orukeet worker in memory and transcribe WAV posts on localhost.
-
-This is the Sacha Chua-style persistent worker: load Q8 once, then reuse it
-for every dictation clip. Bind only to 127.0.0.1. On an 8 GB M1 Air, run a
-single worker with the native Metal Q8 install — not NeMo or F16.
-"""
+# [[file:../orukeet-dictation.org::*The worker][The worker:1]]
+"""Keep one Orukeet model loaded and transcribe WAV posts on localhost."""
 
 from __future__ import annotations
 
@@ -19,14 +15,14 @@ from typing import Any, Callable
 TranscribeFn = Callable[[Path], dict[str, Any]]
 
 
-def load_config(path: Path) -> dict[str, Any]:
+def load_installation(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
 def make_orukeet_transcriber(installation: Path) -> tuple[TranscribeFn, Any]:
     from orukeet import Orukeet
 
-    config = load_config(installation)
+    config = load_installation(installation)
     asr = Orukeet(config["model"], config["runtime"], device=config["device"])
     asr.__enter__()
 
@@ -44,12 +40,11 @@ def make_orukeet_transcriber(installation: Path) -> tuple[TranscribeFn, Any]:
 
 def make_stub_transcriber() -> tuple[TranscribeFn, Any]:
     def transcribe(path: Path) -> dict[str, Any]:
-        size = path.stat().st_size
         return {
             "text": "stub transcript",
             "segments": [{"text": "stub transcript", "start": 0, "end": 0}],
             "language": None,
-            "bytes": size,
+            "bytes": path.stat().st_size,
         }
 
     return transcribe, None
@@ -98,13 +93,12 @@ class Handler(BaseHTTPRequestHandler):
         try:
             with self.lock:
                 result = self.server.transcribe_fn(temp_path)  # type: ignore[attr-defined]
-        except Exception as exc:  # noqa: BLE001 — surface model errors to the agent
+        except Exception as exc:  # noqa: BLE001
             self._json(500, {"ok": False, "error": str(exc)})
             return
         finally:
             temp_path.unlink(missing_ok=True)
-        text = str(result.get("text", "")).strip()
-        if not text:
+        if not str(result.get("text", "")).strip():
             self._json(422, {"ok": False, "error": "empty transcript"})
             return
         self._json(
@@ -132,8 +126,6 @@ def serve(
 
 
 def main() -> int:
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8")
     host = os.environ.get("ORUKEET_HOST", "127.0.0.1")
     port = int(os.environ.get("ORUKEET_PORT", "8765"))
     stub = os.environ.get("ORUKEET_STUB", "").lower() in {"1", "true", "yes"}
@@ -143,7 +135,6 @@ def main() -> int:
             str(Path(__file__).resolve().parent.parent / "installation.json"),
         )
     )
-    worker = None
     try:
         if stub:
             transcribe_fn, worker = make_stub_transcriber()
@@ -152,7 +143,7 @@ def main() -> int:
     except Exception as exc:  # noqa: BLE001
         print(f"Failed to load Orukeet: {exc}", file=sys.stderr)
         return 1
-    server = serve(transcribe_fn, host=host, port=port, ready=True)
+    server = serve(transcribe_fn, host=host, port=port)
     print(f"orukeet-server listening on http://{host}:{port}", file=sys.stderr, flush=True)
     try:
         server.serve_forever()
@@ -168,3 +159,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+# The worker:1 ends here

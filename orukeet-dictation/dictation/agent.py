@@ -1,12 +1,5 @@
-"""Hold a key, record, transcribe, paste.
-
-This is the whole app. It has no window. Flow:
-
-1. hotkey.py notices Right Option going down, in any app.
-2. record.py starts the microphone.
-3. On release, client.py sends the WAV to the local Orukeet server.
-4. paste.py inserts the transcript at the caret and restores the clipboard.
-"""
+# [[file:../orukeet-dictation.org::*The agent][The agent:1]]
+"""Hold a key, record, transcribe, paste."""
 
 from __future__ import annotations
 
@@ -20,103 +13,115 @@ from dictation.config import Config, hotkey_name
 from dictation.server_process import ensure_server
 
 
+def log(message: str) -> None:
+    print(f"orukeet-dictation: {message}", file=sys.stderr)
+
+
 def main() -> None:
     if sys.platform != "darwin":
-        print("orukeet-dictation runs on macOS. It pastes into the focused app via AppKit.", file=sys.stderr)
+        log("this agent runs on macOS, where it can paste into the focused app.")
         sys.exit(1)
-
     config = Config.from_env()
-    print(
-        f"orukeet-dictation: hold {hotkey_name(config.hotkey_code)} to speak. "
-        "Release to paste into the app you were typing in.",
-        file=sys.stderr,
-    )
-    _run(config)
+    log(f"hold {hotkey_name(config.hotkey_code)} to speak. Release to paste.")
+    DictationApp(config).run()
 
 
-def _run(config: Config) -> None:
-    from AppKit import NSApplication, NSApplicationActivationPolicyAccessory
-    from PyObjCTools import AppHelper
+class DictationApp:
+    def __init__(self, config: Config) -> None:
+        self.config = config
+        self.recorder = None
+        self.busy = False
+        self.hotkey = None
+        self.server = None
 
-    from dictation.hotkey import HotkeyMonitor
-    from dictation.paste import insert_text
-    from dictation.permissions import ask_for_access
-    from dictation.record import Recorder
+    def run(self) -> None:
+        from AppKit import NSApplication, NSApplicationActivationPolicyAccessory
+        from PyObjCTools import AppHelper
 
-    app = NSApplication.sharedApplication()
-    app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
+        from dictation.record import Recorder
 
-    recorder = Recorder()
-    state: dict = {"busy": False, "hotkey": None, "server": None}
+        self.recorder = Recorder()
+        app = NSApplication.sharedApplication()
+        app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
+        atexit.register(self.shutdown)
+        signal.signal(signal.SIGINT, lambda *_args: AppHelper.stopEventLoop())
+        AppHelper.callLater(0.1, self.setup)
+        AppHelper.runEventLoop()
 
-    def shutdown() -> None:
-        hotkey = state.get("hotkey")
-        if hotkey is not None:
-            hotkey.stop()
-        recorder.cancel()
-        process = state.get("server")
-        if process is not None and process.poll() is None:
-            process.terminate()
+    def shutdown(self) -> None:
+        if self.hotkey is not None:
+            self.hotkey.stop()
+        if self.recorder is not None:
+            self.recorder.cancel()
+        if self.server is not None and self.server.poll() is None:
+            self.server.terminate()
 
-    atexit.register(shutdown)
-    signal.signal(signal.SIGINT, lambda *_args: AppHelper.stopEventLoop())
-
-    def begin() -> None:
-        if state["busy"]:
-            print("orukeet-dictation: still transcribing the last clip", file=sys.stderr)
+    def begin(self) -> None:
+        if self.busy:
+            log("still transcribing the last clip")
             return
         try:
-            recorder.start(config.max_seconds)
-        except Exception as exc:  # noqa: BLE001 — show mic errors in the log
-            print(f"orukeet-dictation: could not record: {exc}", file=sys.stderr)
-            return
-        print("orukeet-dictation: recording", file=sys.stderr)
-
-    def finish() -> None:
-        if not recorder.is_recording:
-            return
-        state["busy"] = True
-        try:
-            wav = recorder.stop()
+            self.recorder.start(self.config.max_seconds)
         except Exception as exc:  # noqa: BLE001
-            state["busy"] = False
-            print(f"orukeet-dictation: could not finish the recording: {exc}", file=sys.stderr)
+            log(f"could not record: {exc}")
             return
-        print(f"orukeet-dictation: transcribing {len(wav)} bytes", file=sys.stderr)
+        log("recording")
+
+    def finish(self) -> None:
+        if self.recorder is None or not self.recorder.is_recording:
+            return
+        self.busy = True
+        try:
+            wav = self.recorder.stop()
+        except Exception as exc:  # noqa: BLE001
+            self.busy = False
+            log(f"could not finish the recording: {exc}")
+            return
+        log(f"transcribing {len(wav)} bytes")
 
         def work() -> None:
+            from PyObjCTools import AppHelper
+
+            from dictation.paste import insert_text
+
             try:
-                result = transcribe(config.server_url, wav)
-                text = prepare_text(str(result.get("text", "")), config.trailing_space)
+                result = transcribe(self.config.server_url, wav)
+                text = prepare_text(str(result.get("text", "")), self.config.trailing_space)
                 if text:
                     AppHelper.callLater(0, insert_text, text)
-                    print(f"orukeet-dictation: inserted {len(text)} characters", file=sys.stderr)
+                    log(f"inserted {len(text)} characters")
             except Exception as exc:  # noqa: BLE001
-                print(f"orukeet-dictation: transcription failed: {exc}", file=sys.stderr)
+                log(f"transcription failed: {exc}")
             finally:
-                state["busy"] = False
+                self.busy = False
 
         threading.Thread(target=work, daemon=True).start()
 
-    def setup() -> None:
-        mic_done = ask_for_access()
+    def setup(self) -> None:
+        from PyObjCTools import AppHelper
 
-        def wait_until_ready() -> None:
+        from dictation.hotkey import HotkeyMonitor
+        from dictation.permissions import prompt_accessibility, request_microphone
+
+        prompt_accessibility()
+        mic_done, mic_result = request_microphone()
+
+        def wait() -> None:
             mic_done.wait(timeout=180)
+            if mic_done.is_set() and not mic_result["ok"]:
+                log("microphone permission denied. Enable it for this terminal.")
             try:
-                state["server"] = ensure_server(config)
+                self.server = ensure_server(self.config)
             except Exception as exc:  # noqa: BLE001
-                print(f"orukeet-dictation: Orukeet server is not ready: {exc}", file=sys.stderr)
+                log(f"Orukeet server is not ready: {exc}")
                 AppHelper.callLater(0, AppHelper.stopEventLoop)
                 return
 
             def arm() -> None:
-                state["hotkey"] = HotkeyMonitor(config.hotkey_code, begin, finish)
-                print(f"orukeet-dictation: ready. Hold {hotkey_name(config.hotkey_code)} and speak.", file=sys.stderr)
+                self.hotkey = HotkeyMonitor(self.config.hotkey_code, self.begin, self.finish)
+                log(f"ready. Hold {hotkey_name(self.config.hotkey_code)} and speak.")
 
             AppHelper.callLater(0, arm)
 
-        threading.Thread(target=wait_until_ready, daemon=True).start()
-
-    AppHelper.callLater(0.1, setup)
-    AppHelper.runEventLoop()
+        threading.Thread(target=wait, daemon=True).start()
+# The agent:1 ends here

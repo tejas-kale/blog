@@ -1,4 +1,5 @@
-"""Start the Orukeet worker if it is not already listening."""
+# [[file:../orukeet-dictation.org::*Starting the worker][Starting the worker:1]]
+"""Start the Orukeet worker when it is not already listening."""
 
 from __future__ import annotations
 
@@ -19,6 +20,18 @@ def default_server_script() -> Path:
     return ROOT / "server" / "orukeet_server.py"
 
 
+def server_env(config: Config) -> dict[str, str]:
+    env = os.environ.copy()
+    parsed = urllib.parse.urlparse(config.server_url)
+    if parsed.hostname:
+        env["ORUKEET_HOST"] = parsed.hostname
+    if parsed.port:
+        env["ORUKEET_PORT"] = str(parsed.port)
+    if config.installation:
+        env["ORUKEET_INSTALLATION"] = config.installation
+    return env
+
+
 def ensure_server(config: Config) -> subprocess.Popen | None:
     if health(config.server_url):
         return None
@@ -29,17 +42,8 @@ def ensure_server(config: Config) -> subprocess.Popen | None:
     if not script.is_file():
         raise RuntimeError(f"server script not found: {script}")
 
-    env = os.environ.copy()
-    parsed = urllib.parse.urlparse(config.server_url)
-    if parsed.hostname:
-        env["ORUKEET_HOST"] = parsed.hostname
-    if parsed.port:
-        env["ORUKEET_PORT"] = str(parsed.port)
-    if config.installation:
-        env["ORUKEET_INSTALLATION"] = config.installation
-
-    print("orukeet-dictation: loading Orukeet (first start can take a minute on 8 GB)...", file=sys.stderr)
-    process = subprocess.Popen([sys.executable, str(script)], env=env)
+    print("orukeet-dictation: loading Orukeet. The first load can take a minute.", file=sys.stderr)
+    process = subprocess.Popen([sys.executable, str(script)], env=server_env(config))
     deadline = time.monotonic() + 180
     while time.monotonic() < deadline:
         if process.poll() is not None:
@@ -49,3 +53,4 @@ def ensure_server(config: Config) -> subprocess.Popen | None:
         time.sleep(0.5)
     process.terminate()
     raise RuntimeError("Orukeet server did not become ready within 3 minutes")
+# Starting the worker:1 ends here
