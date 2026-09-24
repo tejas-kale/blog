@@ -63,7 +63,8 @@ involvement_from_transfers <- function(transfers, through_season_end) {
         kind <- "loan"
       } else if (type == "end_loan") {
         club <- to
-        kind <- "senior"
+        youth_dest <- grepl("youth|yth|\\bu1[6-9]\\b|\\bu2[1-3]\\b", to, ignore.case = TRUE, perl = TRUE)
+        kind <- if (isTRUE(youth_dest)) "academy" else "senior"
         parent <- NA_character_
       } else {
         stop("Unknown transfer_type: ", type)
@@ -143,8 +144,30 @@ involvement_from_transfers <- function(transfers, through_season_end) {
         for (loan_club in loan_clubs) {
           rows <- rbind(rows, add(loan_club, "full_loan_in"))
         }
+      } else if (length(clubs) == 1) {
+        # The same club occupies every campaign day, partly on loan and partly as senior.
+        rows <- rbind(rows, add(clubs[[1]], "senior"))
+        for (parent in setdiff(parents, clubs[[1]])) {
+          rows <- rbind(rows, add(parent, "full_loan_out"))
+        }
       } else {
-        stop("Unhandled squad split for ", events$player_id[[1]], " ", season_end)
+        # Any other split of the campaign is 0.5 at each club in the stretch.
+        start_idx <- idx[idx > 0][[1]]
+        start_club <- changes$club[[start_idx]]
+        if (start_club %in% senior_clubs) {
+          rows <- rbind(rows, add(start_club, "mid_move_out"))
+        } else if (start_club %in% loan_clubs) {
+          rows <- rbind(rows, add(start_club, "mid_loan_in"))
+        }
+        for (loan_club in setdiff(loan_clubs, start_club)) {
+          rows <- rbind(rows, add(loan_club, "mid_loan_in"))
+        }
+        for (senior_club in setdiff(senior_clubs, start_club)) {
+          rows <- rbind(rows, add(senior_club, "mid_move_in"))
+        }
+        for (parent in setdiff(parents, c(senior_clubs, loan_clubs))) {
+          rows <- rbind(rows, add(parent, "mid_move_out"))
+        }
       }
     }
 

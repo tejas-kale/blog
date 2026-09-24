@@ -86,5 +86,50 @@ local({
   expect_move(2019, "B", "senior", 1.5)
   expect_move(2020, "A", "senior", 1)
 
+  # A loan that becomes permanent at the same club covers the whole campaign.
+  converted <- data.frame(
+    player_id = "convert",
+    date = c("2010-07-01", "2010-09-01", "2010-10-01"),
+    club_from = c("Youth", "Parent", "Parent"),
+    club_to = c("Parent", "LoanClub", "LoanClub"),
+    transfer_type = c("senior", "loan", "permanent"),
+    stringsAsFactors = FALSE
+  )
+  converted_tenure <- senior_squad_tenure(involvement_from_transfers(converted, 2011L))
+  expect_converted <- function(season_end, club, involvement, tenure) {
+    hit <- converted_tenure$season_end == season_end &
+      converted_tenure$club == club &
+      converted_tenure$involvement == involvement
+    if (sum(hit) != 1 || !same_number(converted_tenure$tenure[hit], tenure)) {
+      print(converted_tenure)
+      stop("Converted loan failed: ", season_end, " ", club, " ", involvement)
+    }
+  }
+  expect_converted(2011, "LoanClub", "senior", 1)
+  expect_converted(2011, "Parent", "full_loan_out", 0)
+
+  # Loan from the campaign's first day, then a sale to a third club.
+  sold <- data.frame(
+    player_id = "sold",
+    date = c("2016-07-01", "2016-09-01", "2016-11-01", "2016-11-01"),
+    club_from = c("Youth", "A", "L", "A"),
+    club_to = c("A", "L", "A", "B"),
+    transfer_type = c("senior", "loan", "end_loan", "permanent"),
+    stringsAsFactors = FALSE
+  )
+  sold_tenure <- senior_squad_tenure(involvement_from_transfers(sold, 2017L))
+  expect_sold <- function(season_end, club, involvement, tenure) {
+    hit <- sold_tenure$season_end == season_end &
+      sold_tenure$club == club &
+      sold_tenure$involvement == involvement
+    if (sum(hit) != 1 || !same_number(sold_tenure$tenure[hit], tenure)) {
+      print(sold_tenure)
+      stop("Sold-on loan failed: ", season_end, " ", club, " ", involvement)
+    }
+  }
+  expect_sold(2017, "L", "mid_loan_in", 0.5)
+  expect_sold(2017, "B", "mid_move_in", 0.5)
+  expect_sold(2017, "A", "mid_move_out", 0.5)
+
   cat("tenure sheet ok\n")
 })

@@ -140,6 +140,7 @@ is_youth <- function(club) {
 }
 
 message("Reading transfer histories")
+dropped_dates <- list()
 transfers <- do.call(rbind, lapply(needed_ids, function(player_id) {
   path <- file.path("raw", "transfers", paste0(player_id, ".json"))
   if (!file.exists(path) || file.info(path)$size < 20) stop("Missing transfer history ", player_id)
@@ -151,12 +152,25 @@ transfers <- do.call(rbind, lapply(needed_ids, function(player_id) {
       club_to = character(), transfer_type = character(), stringsAsFactors = FALSE
     ))
   }
-  do.call(rbind, lapply(rows, function(row) {
+  parsed_rows <- lapply(rows, function(row) {
     fee <- tolower(if (is.null(row$fee)) "" else as.character(row$fee))
     from <- row$from$clubName
     to <- row$to$clubName
     date <- row$dateUnformatted
-    if (is.null(date) || !nzchar(date)) stop("Missing transfer date for ", player_id)
+    parsed <- if (is.null(date) || !nzchar(date)) as.Date(NA) else tryCatch(as.Date(date), error = function(e) as.Date(NA))
+    if (is.na(parsed)) {
+      dropped_dates[[length(dropped_dates) + 1L]] <<- data.frame(
+        player_id = player_id,
+        date = if (is.null(date)) "" else as.character(date),
+        club_from = if (is.null(from)) "" else as.character(from),
+        club_to = if (is.null(to)) "" else as.character(to),
+        stringsAsFactors = FALSE
+      )
+      return(NULL)
+    }
+    if (is.null(from) || is.null(to) || !nzchar(from) || !nzchar(to)) {
+      stop("Missing transfer club for ", player_id)
+    }
     type <- if (grepl("end of loan", fee)) {
       "end_loan"
     } else if (grepl("loan", fee)) {
@@ -176,8 +190,25 @@ transfers <- do.call(rbind, lapply(needed_ids, function(player_id) {
       transfer_type = type,
       stringsAsFactors = FALSE
     )
-  }))
+  })
+  parsed_rows <- parsed_rows[!vapply(parsed_rows, is.null, logical(1))]
+  if (length(parsed_rows) == 0) {
+    return(data.frame(
+      player_id = character(), date = character(), club_from = character(),
+      club_to = character(), transfer_type = character(), stringsAsFactors = FALSE
+    ))
+  }
+  do.call(rbind, parsed_rows)
 }))
+utils::write.csv(
+  if (length(dropped_dates) == 0) {
+    data.frame(player_id = character(), date = character(), club_from = character(), club_to = character(), stringsAsFactors = FALSE)
+  } else {
+    do.call(rbind, dropped_dates)
+  },
+  "out/unparsed-transfer-dates.csv",
+  row.names = FALSE
+)
 message("Computing tenure")
 spells <- involvement_from_transfers(transfers, through_season_end = 2026L)
 tenured <- senior_squad_tenure(spells)
@@ -189,7 +220,7 @@ attach_tenure <- function(regulars) {
     hit <- tenured$player_id == regulars$tm_id[[i]] &
       tenured$season_end == regulars$season_end[[i]] &
       tenured$club == regulars$club[[i]]
-    if (sum(hit) == 1) regulars$tenure[[i]] <- tenured$tenure[[hit]]
+    if (sum(hit) == 1) regulars$tenure[[i]] <- tenured$tenure[[which(hit)]]
   }
   regulars$tenure_missing <- regulars$enters & is.na(regulars$tenure)
   regulars
@@ -240,7 +271,8 @@ summarise_cut <- function(cut, regulars) {
     interval = boot$interval,
     n_club_seasons = nrow(club_seasons),
     n_blocked = nrow(blocked),
-    plotted = plotted$club
+    plotted = plotted$club,
+    absent_clubs = sort(setdiff(unique(gaps$club), correlations$club))
   )
 }
 
