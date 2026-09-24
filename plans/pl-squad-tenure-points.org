@@ -238,7 +238,7 @@ Tejas confirms the Everton deduction that stood. Tejas checks the Kane sheet aga
 
 *** Git review baseline and final commit SHA
 
-Review baseline, recorded on the clean tree before implementation: =30fa0e55b407bd9a78d60f6e073ea560274ac965=. The final commit SHA is the commit that adds this section on =cursor/pl-squad-tenure-plan-6e5c=.
+Review baseline, recorded on the clean tree before implementation: =30fa0e55b407bd9a78d60f6e073ea560274ac965=. The results in this section were committed as =f21a1edbe1548790a1df52d4151598f4a2cd09c4= on =cursor/pl-squad-tenure-plan-6e5c=.
 
 * Unknowns and out of scope
 
