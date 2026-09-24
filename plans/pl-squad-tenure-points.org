@@ -209,7 +209,7 @@ Transfermarkt writes Manchester United as "Man Utd", Sheffield United as "Sheff 
 
 The org resolution table is still the empty header. 251 unmatched regulars and 2 ambiguous regulars are in =out/ambiguous-players.csv=. A club-season that contains one of them stays out of the correlation. On the starts cut, Barnsley, Bradford City, and Huddersfield Town have no kept season. On the appearances cut, Barnsley, Blackpool, Bradford City, Huddersfield Town, and Sheffield United have no kept season. Clubs under 10 kept seasons are named in =out/summary.json=.
 
-The campaign window in the code is 1 September through 31 May. A loan that becomes a permanent stay at the same club counts as one season there. Any other mix of a loan and a senior club in one campaign counts 0.5 at each club in the stretch. An end of loan into a youth team is an academy return. Everton's −8 is the gap in the two tables; Tejas still confirms that this is the deduction that stood after appeal.
+The campaign window in the code is 1 September through 31 May. A loan that becomes a permanent stay at the same club counts as one season there. Two loan clubs and no senior days give the parent 0.5 once and each loan club 0.5. Any other mix of a loan and a senior club in one campaign counts 0.5 at each club in the stretch. An end of loan into a youth team is an academy return. The empty org table uses the columns season, club, source name, FBref id, Transfermarkt id, resolution, and note. Everton's −8 is the gap in the two tables; Tejas still confirms that this is the deduction that stood after appeal.
 
 *** Completed Review Map
 
@@ -447,10 +447,12 @@ involvement_from_transfers <- function(transfers, through_season_end) {
           rows <- rbind(rows, add(other, "mid_move_in"))
         }
       } else if (length(loan_clubs) >= 1 && length(senior_clubs) == 0) {
-        parent <- parents[[1]]
-        rows <- rbind(rows, add(parent, "full_loan_out"))
+        # Two loan clubs in one season: the parent gets 0.5 once, and each loan club gets 0.5.
+        for (parent in unique(parents)) {
+          rows <- rbind(rows, add(parent, "mid_loan_parent"))
+        }
         for (loan_club in loan_clubs) {
-          rows <- rbind(rows, add(loan_club, "full_loan_in"))
+          rows <- rbind(rows, add(loan_club, "mid_loan_in"))
         }
       } else if (length(clubs) == 1) {
         # The same club occupies every campaign day, partly on loan and partly as senior.
@@ -825,7 +827,28 @@ bootstrap_median_correlation <- function(club_seasons, n_replicates = 2000L, see
 # the player out. Ambiguous and unmatched players stay out until then.
 # A club-season with any regular still out is absent from the correlation.
 
+normalize_org_table <- function(org_table) {
+  if (is.null(org_table) || ncol(org_table) == 0) return(org_table)
+  key <- tolower(names(org_table))
+  key <- gsub("[^a-z0-9]+", "_", key)
+  key <- sub("^_|_$", "", key)
+  canon <- c(
+    season = "season_end",
+    season_end = "season_end",
+    club = "club",
+    source_name = "source_name",
+    fbref_id = "fbref_id",
+    transfermarkt_id = "tm_id",
+    tm_id = "tm_id",
+    resolution = "resolution",
+    note = "note"
+  )
+  names(org_table) <- ifelse(key %in% names(canon), unname(canon[key]), key)
+  org_table
+}
+
 apply_org_resolution <- function(regulars, org_table) {
+  org_table <- normalize_org_table(org_table)
   regulars$enters <- FALSE
   regulars$tm_id <- as.character(regulars$tm_id)
   if (nrow(org_table) > 0) org_table$tm_id <- as.character(org_table$tm_id)

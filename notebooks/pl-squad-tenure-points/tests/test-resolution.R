@@ -39,5 +39,10 @@ local({
   )
   cleared <- club_seasons_blocked_by_unresolved(apply_org_resolution(regulars, org))
   stopifnot(nrow(cleared) == 0)
+
+  spec_header <- org
+  names(spec_header) <- c("season", "club", "source name", "FBref id", "Transfermarkt id", "resolution", "note")
+  cleared_spec <- club_seasons_blocked_by_unresolved(apply_org_resolution(regulars, spec_header))
+  stopifnot(nrow(cleared_spec) == 0)
   cat("resolution ok\n")
 })

@@ -139,10 +139,12 @@ involvement_from_transfers <- function(transfers, through_season_end) {
           rows <- rbind(rows, add(other, "mid_move_in"))
         }
       } else if (length(loan_clubs) >= 1 && length(senior_clubs) == 0) {
-        parent <- parents[[1]]
-        rows <- rbind(rows, add(parent, "full_loan_out"))
+        # Two loan clubs in one season: the parent gets 0.5 once, and each loan club gets 0.5.
+        for (parent in unique(parents)) {
+          rows <- rbind(rows, add(parent, "mid_loan_parent"))
+        }
         for (loan_club in loan_clubs) {
-          rows <- rbind(rows, add(loan_club, "full_loan_in"))
+          rows <- rbind(rows, add(loan_club, "mid_loan_in"))
         }
       } else if (length(clubs) == 1) {
         # The same club occupies every campaign day, partly on loan and partly as senior.

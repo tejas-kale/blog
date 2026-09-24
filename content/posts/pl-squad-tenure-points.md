@@ -15,6 +15,6 @@ On the appearances cut the median is 0.017. The trimmed mean is 0.097 and the me
 
 Every club that reaches 10 seasons has a defined correlation, so the write-up has no separate sentence for an undefined share. Tejas chooses which cut a chart shows. Both cuts are computed. The ten club plots for each cut stay with the notebook.
 
-A club-season stays out when a regular name is unmatched or ambiguous. The resolution table is empty. On the starts cut, 172 club-seasons are out, and Barnsley, Bradford City, and Huddersfield Town have none left. Filling a row in the resolution table is what lets that season back in.
+A club-season stays out when a regular name is unmatched or ambiguous. The resolution table is empty. On the starts cut, 172 club-seasons are out, and Barnsley, Bradford City, and Huddersfield Town have none left. Clubs with fewer than ten kept seasons are named in the notebook summary, and they stay out of the median. Filling a row in the resolution table is what lets that season back in.
 
 {{< note href="https://github.com/tejas-kale/blog/tree/main/notebooks/pl-squad-tenure-points" >}}R sources{{< /note >}}

@@ -131,5 +131,28 @@ local({
   expect_sold(2017, "B", "mid_move_in", 0.5)
   expect_sold(2017, "A", "mid_move_out", 0.5)
 
+  # Two loan clubs and no senior days: the parent gets 0.5 once, each loan club 0.5.
+  two_loans <- data.frame(
+    player_id = "twoloan",
+    date = c("2012-07-01", "2012-09-01", "2013-01-15", "2013-01-15"),
+    club_from = c("Youth", "Parent", "LoanA", "Parent"),
+    club_to = c("Parent", "LoanA", "Parent", "LoanB"),
+    transfer_type = c("senior", "loan", "end_loan", "loan"),
+    stringsAsFactors = FALSE
+  )
+  two_tenure <- senior_squad_tenure(involvement_from_transfers(two_loans, 2013L))
+  expect_two <- function(season_end, club, involvement, tenure) {
+    hit <- two_tenure$season_end == season_end &
+      two_tenure$club == club &
+      two_tenure$involvement == involvement
+    if (sum(hit) != 1 || !same_number(two_tenure$tenure[hit], tenure)) {
+      print(two_tenure)
+      stop("Two-loan case failed: ", season_end, " ", club, " ", involvement)
+    }
+  }
+  expect_two(2013, "Parent", "mid_loan_parent", 0.5)
+  expect_two(2013, "LoanA", "mid_loan_in", 0.5)
+  expect_two(2013, "LoanB", "mid_loan_in", 0.5)
+
   cat("tenure sheet ok\n")
 })

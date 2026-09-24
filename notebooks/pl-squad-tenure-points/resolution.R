@@ -3,7 +3,28 @@
 # the player out. Ambiguous and unmatched players stay out until then.
 # A club-season with any regular still out is absent from the correlation.
 
+normalize_org_table <- function(org_table) {
+  if (is.null(org_table) || ncol(org_table) == 0) return(org_table)
+  key <- tolower(names(org_table))
+  key <- gsub("[^a-z0-9]+", "_", key)
+  key <- sub("^_|_$", "", key)
+  canon <- c(
+    season = "season_end",
+    season_end = "season_end",
+    club = "club",
+    source_name = "source_name",
+    fbref_id = "fbref_id",
+    transfermarkt_id = "tm_id",
+    tm_id = "tm_id",
+    resolution = "resolution",
+    note = "note"
+  )
+  names(org_table) <- ifelse(key %in% names(canon), unname(canon[key]), key)
+  org_table
+}
+
 apply_org_resolution <- function(regulars, org_table) {
+  org_table <- normalize_org_table(org_table)
   regulars$enters <- FALSE
   regulars$tm_id <- as.character(regulars$tm_id)
   if (nrow(org_table) > 0) org_table$tm_id <- as.character(org_table$tm_id)

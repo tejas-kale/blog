@@ -85,8 +85,8 @@ squads$name_key <- normalize_person_name(squads$player)
 if (!file.exists("org-resolution.csv")) {
   utils::write.csv(
     data.frame(
-      season_end = integer(), club = character(), source_name = character(),
-      fbref_id = character(), tm_id = character(), resolution = character(),
+      season = integer(), club = character(), `source name` = character(),
+      `FBref id` = character(), `Transfermarkt id` = character(), resolution = character(),
       note = character(), stringsAsFactors = FALSE
     ),
     "org-resolution.csv",
