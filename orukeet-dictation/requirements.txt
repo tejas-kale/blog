@@ -1,9 +1,0 @@
-# macOS only. PyObjC is the hotkey, the microphone, and Command-V.
-# llama-cpp-python loads the SpeakoFlow GGUF. huggingface_hub downloads it.
-pyobjc-core>=10.3
-pyobjc-framework-Cocoa>=10.3
-pyobjc-framework-Quartz>=10.3
-pyobjc-framework-AVFoundation>=10.3
-pyobjc-framework-ApplicationServices>=10.3
-llama-cpp-python>=0.3.4
-huggingface_hub>=0.26
