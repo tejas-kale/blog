@@ -1,8 +1,7 @@
 #+TITLE: What preprocessing does to article narration
 #+OPTIONS: toc:2 num:nil
 #+STARTUP: overview indent inlineimages
-#+PROPERTY: header-args:python :session *tts* :results output replace :exports both :tangle tts_preprocessing.py
-#+PROPERTY: header-args:sh :tangle run-experiment.sh :shebang "#!/bin/sh"
+#+PROPERTY: header-args:python :session *tts* :results output replace :exports both :python /Users/tejaskale/Code/blog/.venv/bin/python
 
 This is the agreed plan for [[https://github.com/tejas-kale/blog/issues/7][issue 7]] and the living notebook for the
 experiment. Implementation adds source blocks, results, and evidence
@@ -285,26 +284,24 @@ whose size or duration assertion fails.
   adds, and *its output is committed* so a future reader can
   reconstruct the environment. =ffmpeg= and =afplay= are already on
   =PATH=; =mpv= is not and is not used.
-- Tangle and run :: =C-c C-v t= in Emacs, or =emacs --batch -l org
-  --eval '(org-babel-tangle-file "tts_preprocessing.org")'=. Then
-  =./run-experiment.sh=. The tangled =tts_preprocessing.py= is
-  *generated*: never edit it directly, and =run-experiment.sh= re-tangles
-  and fails on drift before running anything.
-- Parameters and date ranges :: Models, voices, chunk size (400 words),
-  the large chunk size for the comparison (1,200 words), excerpt start
-  and end strings, and the spend ceiling ($10) all live in one
-  parameter block. No date ranges: the inputs are static.
+- Run :: Evaluate the source blocks under Parameters. Each calls
+  OpenRouter with =OPENROUTER_API_KEY= and, when it writes audio, puts
+  the MP3 under =audio/=. Nothing in this file tangles to a script.
+- Parameters and date ranges :: Models and voices are in those blocks.
+  Render chunks stay at about 400 words, with a 1,200-word comparison,
+  as under Render design. Excerpt boundaries stay in the plan above.
+  The length search stops at an estimated $10. No date ranges: the
+  inputs are static.
 - Randomness :: The blinding order is seeded and the seed is recorded in
   =scores.csv=. Synthesis itself is non-deterministic — =/audio/speech=
   exposes no seed — so identical text may render differently on
   repeat. This is stated, not controlled.
-- Generated artefacts :: =tts_preprocessing.py= and =run-experiment.sh=
-  (tangled, generated, committed); =audio/= (gitignored);
-  =diffs/= (committed); =inputs/= (committed); =renders.csv=,
-  =scores.csv=, and =lexicon.csv= (committed).
+- Generated artefacts :: =audio/= (gitignored); =diffs/=, =inputs/=,
+  =renders.csv=, =scores.csv=, and =lexicon.csv= (committed when the
+  experiment produces them).
 - Verification command :: =./verify.sh=, which runs the micro-fixture
-  tests, the Whisper diff, the loudness checks, the hash recomputation,
-  and the tangle drift check.
+  tests, the Whisper diff, the loudness checks, and the hash
+  recomputation.
 
 ** Expected cost
 
@@ -339,46 +336,77 @@ to report:
 Stop and report if any of these surprises you, rather than adapting the
 design silently.
 
+Billing reconciliation is skipped. The first block below is the MP3
+check: OpenRouter returned =audio/mpeg=, and the file plays from this
+notebook.
+
 ** Parameters
 
-The probe reads every operational choice from this one block. The
-working chunk size remains a conservative character limit until this
-probe has measured the model ceilings.
+Three blocks call OpenRouter and leave their results in this file.
+Click a link to play that MP3 with =afplay=. Emacs asks before it runs
+the link.
 
-#+begin_src python :tangle tts_preprocessing.py
-"""Generated from tts_preprocessing.org; do not edit directly."""
+The first block renders one short paragraph with =microsoft/mai-voice-2=,
+voice =en-US-Harper:MAI-Voice-2=. That file is the reference for the
+voice comparison.
 
-from __future__ import annotations
-
-import json
+#+begin_src python :tangle no :session none :results output raw replace
 import os
-import subprocess
-import sys
-import time
-from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import requests
 
+paragraph = (
+    "Before the longer probe, this paragraph is a single render from "
+    "MAI Voice 2, voice Harper, through OpenRouter. "
+    "Click Play under this block to hear it without leaving the file."
+)
+key = os.environ.get("OPENROUTER_API_KEY")
+if not key:
+    raise RuntimeError("OPENROUTER_API_KEY is required.")
+response = requests.post(
+    "https://openrouter.ai/api/v1/audio/speech",
+    headers={"Authorization": f"Bearer {key}"},
+    json={
+        "model": "microsoft/mai-voice-2",
+        "input": paragraph,
+        "voice": "en-US-Harper:MAI-Voice-2",
+        "response_format": "mp3",
+        "speed": 1,
+    },
+    timeout=120,
+)
+response.raise_for_status()
+if not response.headers.get("Content-Type", "").startswith("audio/mpeg"):
+    raise RuntimeError(response.text[:500])
+path = Path("audio/mai-paragraph.mp3")
+path.parent.mkdir(exist_ok=True)
+path.write_bytes(response.content)
+print(
+    '[[elisp:(start-process "mai-paragraph" nil "afplay" '
+    '(expand-file-name "audio/mai-paragraph.mp3" '
+    '(file-name-directory (buffer-file-name))))][Play mai-paragraph.mp3]]'
+)
+#+end_src
 
-OPENROUTER_URL = "https://openrouter.ai/api/v1"
-OUTPUT_DIRECTORY = Path("audio")
-RESULTS_PATH = Path("probe-results.json")
-MODELS = {
-    "microsoft/mai-voice-2": {
-        "voice": "en-US-Harper:MAI-Voice-2",
-        "price_per_million_characters": 22,
-    },
-    "microsoft/mai-voice-2-flash": {
-        "voice": "en-US-Harper:MAI-Voice-2",
-        "price_per_million_characters": 15,
-    },
-    "deepgram/flux-tts:free": {
-        "voice": "flux-alexis-en",
-        "price_per_million_characters": 0,
-    },
-}
-AUDITION_VOICES = (
+#+RESULTS:
+[[elisp:(start-process "mai-paragraph" nil "afplay" (expand-file-name "audio/mai-paragraph.mp3" (file-name-directory (buffer-file-name))))][Play mai-paragraph.mp3]]
+
+The same paragraph again, read by six free =deepgram/flux-tts:free=
+voices, so the comparison with Harper is on the same words.
+
+#+begin_src python :tangle no :session none :results output raw replace
+import os
+from pathlib import Path
+
+import requests
+
+paragraph = (
+    "Before the longer probe, this paragraph is a single render from "
+    "MAI Voice 2, voice Harper, through OpenRouter. "
+    "Click Play under this block to hear it without leaving the file."
+)
+voices = (
     "flux-alexis-en",
     "flux-bree-en",
     "flux-elise-en",
@@ -386,343 +414,205 @@ AUDITION_VOICES = (
     "flux-meena-en",
     "flux-paige-en",
 )
-FIXED_SENTENCE = (
-    "This is the fixed voice audition sentence for the TTS preprocessing "
-    "experiment. It contains a pause, a number: forty-two, and a name: Tejas Kale."
-)
-INITIAL_PROBE_LENGTHS = (2_000, 5_000, 10_000, 20_000)
-MAXIMUM_PROBE_LENGTH = 160_000
-WORKING_CHUNK_SIZE_CHARACTERS = 8_000
-SPEND_CEILING_USD = 10.00
-REQUEST_TIMEOUT_SECONDS = 120
-
-
-@dataclass
-class RequestRecord:
-    model: str
-    voice: str
-    characters_sent: int
-    estimated_cost_usd: float
-    status_code: int
-    content_type: str | None
-    generation_id: str | None
-    output_file: str | None
-    error: str | None
-    playable: bool
-
-
-def api_key() -> str:
-    value = os.environ.get("OPENROUTER_API_KEY")
-    if not value:
-        raise RuntimeError("OPENROUTER_API_KEY is required.")
-    return value
-
-
-def estimated_cost(model: str, characters: int) -> float:
-    return MODELS[model]["price_per_million_characters"] * characters / 1_000_000
-
-
-def checked_budget(records: list[RequestRecord], model: str, characters: int) -> None:
-    projected = sum(record.estimated_cost_usd for record in records) + estimated_cost(
-        model, characters
-    )
-    if projected > SPEND_CEILING_USD:
-        raise RuntimeError(
-            f"Probe would exceed the ${SPEND_CEILING_USD:.2f} ceiling "
-            f"(${projected:.2f} projected); stopping."
-        )
-
-
-def write_checkpoint(records: list[RequestRecord], stop_reason: str | None = None) -> None:
-    RESULTS_PATH.write_text(
-        json.dumps(
-            {
-                "status": "blocked" if stop_reason else "incomplete",
-                "stop_reason": stop_reason,
-                "records": [asdict(record) for record in records],
-                "estimated_total_cost_usd": sum(
-                    record.estimated_cost_usd for record in records
-                ),
-            },
-            indent=2,
-            sort_keys=True,
-        )
-        + "\n"
-    )
-
-
-def is_playable_mp3(path: Path) -> bool:
-    completed = subprocess.run(
-        [
-            "ffprobe",
-            "-v",
-            "error",
-            "-show_entries",
-            "format=format_name,duration",
-            "-of",
-            "json",
-            str(path),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if completed.returncode:
-        return False
-    format_info = json.loads(completed.stdout).get("format", {})
-    return (
-        "mp3" in format_info.get("format_name", "").split(",")
-        and float(format_info.get("duration", 0)) > 0
-    )
-
-
-def synthesize(
-    records: list[RequestRecord],
-    model: str,
-    voice: str,
-    text: str,
-    filename: str | None,
-) -> RequestRecord:
-    checked_budget(records, model, len(text))
+key = os.environ.get("OPENROUTER_API_KEY")
+if not key:
+    raise RuntimeError("OPENROUTER_API_KEY is required.")
+directory = Path("audio")
+directory.mkdir(exist_ok=True)
+for voice in voices:
     response = requests.post(
-        f"{OPENROUTER_URL}/audio/speech",
-        headers={"Authorization": f"Bearer {api_key()}"},
+        "https://openrouter.ai/api/v1/audio/speech",
+        headers={"Authorization": f"Bearer {key}"},
         json={
-            "model": model,
-            "input": text,
+            "model": "deepgram/flux-tts:free",
+            "input": paragraph,
             "voice": voice,
             "response_format": "mp3",
             "speed": 1,
         },
-        timeout=REQUEST_TIMEOUT_SECONDS,
+        timeout=120,
     )
-    content_type = response.headers.get("Content-Type")
-    generation_id = response.headers.get("X-Generation-Id")
-    output_file = None
-    playable = False
-    error = None
-    if response.ok and content_type and content_type.startswith("audio/mpeg"):
-        if filename:
-            OUTPUT_DIRECTORY.mkdir(exist_ok=True)
-            path = OUTPUT_DIRECTORY / filename
-            path.write_bytes(response.content)
-            output_file = str(path)
-            playable = is_playable_mp3(path)
-            if not playable:
-                error = "ffprobe did not recognize a non-empty MP3."
-    else:
-        error = response.text[:1_000]
-
-    record = RequestRecord(
-        model=model,
-        voice=voice,
-        characters_sent=len(text),
-        estimated_cost_usd=estimated_cost(model, len(text)),
-        status_code=response.status_code,
-        content_type=content_type,
-        generation_id=generation_id,
-        output_file=output_file,
-        error=error,
-        playable=playable,
+    response.raise_for_status()
+    if not response.headers.get("Content-Type", "").startswith("audio/mpeg"):
+        raise RuntimeError(f"{voice}: {response.text[:500]}")
+    filename = f"audition-{voice}.mp3"
+    (directory / filename).write_bytes(response.content)
+    print(
+        f'[[elisp:(start-process "{voice}" nil "afplay" '
+        f'(expand-file-name "audio/{filename}" '
+        '(file-name-directory (buffer-file-name))))]'
+        f'[{voice}]]'
     )
-    records.append(record)
-    write_checkpoint(records)
-    return record
+#+end_src
+
+#+RESULTS:
+[[elisp:(start-process "flux-alexis-en" nil "afplay" (expand-file-name "audio/audition-flux-alexis-en.mp3" (file-name-directory (buffer-file-name))))][flux-alexis-en]]
+[[elisp:(start-process "flux-bree-en" nil "afplay" (expand-file-name "audio/audition-flux-bree-en.mp3" (file-name-directory (buffer-file-name))))][flux-bree-en]]
+[[elisp:(start-process "flux-elise-en" nil "afplay" (expand-file-name "audio/audition-flux-elise-en.mp3" (file-name-directory (buffer-file-name))))][flux-elise-en]]
+[[elisp:(start-process "flux-haley-en" nil "afplay" (expand-file-name "audio/audition-flux-haley-en.mp3" (file-name-directory (buffer-file-name))))][flux-haley-en]]
+[[elisp:(start-process "flux-meena-en" nil "afplay" (expand-file-name "audio/audition-flux-meena-en.mp3" (file-name-directory (buffer-file-name))))][flux-meena-en]]
+[[elisp:(start-process "flux-paige-en" nil "afplay" (expand-file-name "audio/audition-flux-paige-en.mp3" (file-name-directory (buffer-file-name))))][flux-paige-en]]
+
+Chosen voice: =flux-haley-en=, the closest to Harper.
+
+This block finds the longest input each model still returns as MP3.
+It tries 2,000, then 5,000, 10,000, and 20,000 characters, doubles
+until 160,000, and bisects between the last success and the first
+rejection. It stops before the next call would push this block's
+estimated spend past $10. Accepted means HTTP 200 and =audio/mpeg=.
+
+#+begin_src python :tangle no :session none :results output replace
+import os
+import sys
+
+import requests
+
+MODELS = (
+    ("deepgram/flux-tts:free", "flux-haley-en", 0),
+    ("microsoft/mai-voice-2-flash", "en-US-Harper:MAI-Voice-2", 15),
+    ("microsoft/mai-voice-2", "en-US-Harper:MAI-Voice-2", 22),
+)
+INITIAL_LENGTHS = (2_000, 5_000, 10_000, 20_000)
+MAXIMUM_LENGTH = 160_000
+SPEND_CEILING_USD = 10.00
+SENTENCE = "The quick brown fox jumps over the lazy dog. "
+
+key = os.environ.get("OPENROUTER_API_KEY")
+if not key:
+    raise RuntimeError("OPENROUTER_API_KEY is required.")
+
+spent = 0.0
 
 
-def probe_text(characters: int) -> str:
-    sentence = "The quick brown fox jumps over the lazy dog. "
-    return (sentence * (characters // len(sentence) + 1))[:characters]
+def cost(rate, characters):
+    return rate * characters / 1_000_000
 
 
-def accepted(record: RequestRecord) -> bool:
-    return record.status_code == 200 and record.content_type == "audio/mpeg"
-
-
-def probe_input_limit(
-    records: list[RequestRecord], model: str, voice: str
-) -> dict[str, object]:
-    attempts: list[dict[str, object]] = []
-
-    def attempt(characters: int) -> bool:
-        record = synthesize(records, model, voice, probe_text(characters), None)
-        success = accepted(record)
-        attempts.append(
-            {
-                "characters": characters,
-                "accepted": success,
-                "status_code": record.status_code,
-                "error": record.error,
-                "generation_id": record.generation_id,
-            }
-        )
-        return success
-
-    last_success = 0
-    first_failure = None
-    for characters in INITIAL_PROBE_LENGTHS:
-        if attempt(characters):
-            last_success = characters
-        else:
-            first_failure = characters
-            break
-    if first_failure is None:
-        candidate = INITIAL_PROBE_LENGTHS[-1] * 2
-        while candidate <= MAXIMUM_PROBE_LENGTH:
-            if attempt(candidate):
-                last_success = candidate
-                candidate *= 2
-            else:
-                first_failure = candidate
-                break
-    if first_failure is None:
-        return {
-            "attempts": attempts,
-            "maximum_accepted_characters": last_success,
-            "first_failed_characters": None,
-            "conclusion": (
-                f"No failure through {MAXIMUM_PROBE_LENGTH} characters; "
-                "the maximum is not established."
-            ),
-        }
-
-    low, high = last_success, first_failure
-    while high - low > 1:
-        midpoint = (low + high) // 2
-        if attempt(midpoint):
-            low = midpoint
-        else:
-            high = midpoint
-    return {
-        "attempts": attempts,
-        "maximum_accepted_characters": low,
-        "first_failed_characters": high,
-        "conclusion": "Bisection completed.",
-    }
-
-
-def provider_usage(generation_id: str) -> dict[str, object]:
-    response = requests.get(
-        f"{OPENROUTER_URL}/generation",
-        headers={"Authorization": f"Bearer {api_key()}"},
-        params={"id": generation_id},
-        timeout=REQUEST_TIMEOUT_SECONDS,
-    )
-    if not response.ok:
-        raise RuntimeError(
-            f"Generation lookup for {generation_id} failed: "
-            f"{response.status_code} {response.text[:1_000]}"
-        )
-    return response.json().get("data", response.json())
-
-
-def main() -> None:
-    records: list[RequestRecord] = []
-    limits = {}
+def attempt(model, voice, rate, characters):
+    global spent
+    if spent + cost(rate, characters) > SPEND_CEILING_USD:
+        return "budget", None
+    text = (SENTENCE * (characters // len(SENTENCE) + 1))[:characters]
+    print(f"{model} {characters}", file=sys.stderr, flush=True)
     try:
-        for model, settings in MODELS.items():
-            limits[model] = probe_input_limit(records, model, settings["voice"])
-
-        successful_limits = [
-            result["maximum_accepted_characters"]
-            for result in limits.values()
-            if result["first_failed_characters"] is not None
-        ]
-        if len(successful_limits) != len(MODELS):
-            raise RuntimeError("At least one input maximum was not established; stopping.")
-        lowest_limit = min(successful_limits)
-        if WORKING_CHUNK_SIZE_CHARACTERS >= lowest_limit:
-            raise RuntimeError(
-                f"Working chunk size {WORKING_CHUNK_SIZE_CHARACTERS} is not below "
-                f"the lowest measured ceiling {lowest_limit}; stopping."
-            )
-
-        mp3_record = synthesize(
-            records,
-            "microsoft/mai-voice-2",
-            MODELS["microsoft/mai-voice-2"]["voice"],
-            FIXED_SENTENCE,
-            "end-to-end-mp3.mp3",
+        response = requests.post(
+            "https://openrouter.ai/api/v1/audio/speech",
+            headers={"Authorization": f"Bearer {key}"},
+            json={
+                "model": model,
+                "input": text,
+                "voice": voice,
+                "response_format": "mp3",
+                "speed": 1,
+            },
+            timeout=180,
+            stream=True,
         )
-        if not mp3_record.playable:
-            raise RuntimeError(f"MP3 probe failed: {mp3_record.error}")
-
-        auditions = []
-        for voice in AUDITION_VOICES:
-            record = synthesize(
-                records,
-                "deepgram/flux-tts:free",
-                voice,
-                FIXED_SENTENCE,
-                f"audition-{voice}.mp3",
-            )
-            if not record.playable:
-                raise RuntimeError(f"Voice audition failed for {voice}: {record.error}")
-            auditions.append(asdict(record))
-
-        provider_records = {}
-        for record in records:
-            if record.generation_id:
-                time.sleep(1)
-                provider_records[record.generation_id] = provider_usage(record.generation_id)
-    except (RuntimeError, requests.RequestException) as error:
-        write_checkpoint(records, str(error))
-        raise
-
-    result = {
-        "status": "complete",
-        "models": MODELS,
-        "working_chunk_size_characters": WORKING_CHUNK_SIZE_CHARACTERS,
-        "spend_ceiling_usd": SPEND_CEILING_USD,
-        "input_limits": limits,
-        "mp3_probe": asdict(mp3_record),
-        "auditions": auditions,
-        "records": [asdict(record) for record in records],
-        "provider_usage": provider_records,
-        "estimated_total_cost_usd": sum(record.estimated_cost_usd for record in records),
-        "human_action": (
-            "Tejas must listen to all audition MP3s, choose a voice, and record "
-            "the choice and reason before downstream work starts."
-        ),
-    }
-    RESULTS_PATH.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
-    print(f"Wrote {RESULTS_PATH}")
-    print("Play the MP3 probe with: afplay audio/end-to-end-mp3.mp3")
+    except requests.Timeout:
+        spent += cost(rate, characters)
+        return "timeout", None
+    except requests.RequestException as error:
+        return "error", str(error)[:200]
+    spent += cost(rate, characters)
+    with response:
+        content_type = response.headers.get("Content-Type", "")
+        if response.status_code == 200 and content_type.startswith("audio/mpeg"):
+            return "accepted", None
+        snippet = response.content[:200].decode("utf-8", "replace").replace("\n", " ")
+        return "rejected", f"{response.status_code} {snippet}"
 
 
-if __name__ == "__main__":
-    main()
+def probe(model, voice, rate):
+    attempts = []
+    last_accepted = 0
+    first_failed = None
+    stop = None
+
+    def one(characters):
+        nonlocal last_accepted, first_failed, stop
+        status, detail = attempt(model, voice, rate, characters)
+        attempts.append(f"{characters} {status}")
+        if status == "accepted":
+            last_accepted = characters
+            return
+        if status == "rejected":
+            first_failed = characters
+            return
+        stop = status if detail is None else f"{status}: {detail}"
+
+    for characters in INITIAL_LENGTHS:
+        one(characters)
+        if stop or first_failed is not None:
+            break
+    else:
+        characters = INITIAL_LENGTHS[-1] * 2
+        while characters <= MAXIMUM_LENGTH and stop is None and first_failed is None:
+            one(characters)
+            characters *= 2
+
+    if stop is None and first_failed is not None:
+        low, high = last_accepted, first_failed
+        while stop is None and high - low > 1:
+            midpoint = (low + high) // 2
+            one(midpoint)
+            if stop is not None:
+                break
+            if last_accepted >= midpoint:
+                low = last_accepted
+            else:
+                high = first_failed
+
+    if stop == "budget":
+        conclusion = "stopped before exceeding the $10 estimate"
+    elif stop:
+        conclusion = f"stopped: {stop}"
+    elif first_failed is None:
+        conclusion = f"no failure through {MAXIMUM_LENGTH} characters"
+    else:
+        conclusion = "bisection completed"
+    print(
+        f"{model}: maximum_accepted={last_accepted} "
+        f"first_failed={first_failed} {conclusion}"
+    )
+    print("  " + "; ".join(attempts))
+
+
+for model, voice, rate in MODELS:
+    probe(model, voice, rate)
+print(f"estimated_spend_usd={spent:.4f}")
 #+end_src
 
-#+begin_src sh :tangle run-experiment.sh :shebang "#!/bin/sh"
-#!/bin/sh
-set -eu
-cd "$(dirname "$0")"
-emacs --batch -l org --eval \
-  '(org-babel-tangle-file "tts_preprocessing.org")' >/dev/null
-git diff --exit-code -- tts_preprocessing.py run-experiment.sh
-/Users/tejaskale/Code/blog/.venv/bin/python tts_preprocessing.py
-#+end_src
+#+RESULTS:
+: deepgram/flux-tts:free: maximum_accepted=2000 first_failed=2001 bisection completed
+:   2000 accepted; 5000 rejected; 3500 rejected; 2750 rejected; 2375 rejected; 2187 rejected; 2093 rejected; 2046 rejected; 2023 rejected; 2011 rejected; 2005 rejected; 2002 rejected; 2001 rejected
+: microsoft/mai-voice-2-flash: maximum_accepted=160000 first_failed=none no failure through 160000 characters
+:   2000 accepted; 5000 accepted; 10000 accepted; 20000 accepted; 40000 accepted; 80000 accepted; 160000 accepted
+: microsoft/mai-voice-2: maximum_accepted=80000 first_failed=none stopped before exceeding the $10 estimate
+:   2000 accepted; 5000 accepted; 10000 accepted; 20000 accepted; 40000 accepted; 80000 accepted; 160000 budget
+: estimated_spend_usd=8.2090
+
+Deepgram rejects 2,001 characters, so its ceiling is 2,000. A chunk of
+8,000 characters does not fit that model. =mai-voice-2-flash= accepted
+every length up to the 160,000 search cap, and =mai-voice-2= accepted
+every length through 80,000. The 160,000 call for =mai-voice-2= was not
+sent; it would have pushed the estimate past $10. This block's
+estimated spend was $8.21. The large replies came back in about a
+second and were closed after the headers, so "accepted" means the API
+returned MP3, not that the whole passage was played or checked for
+truncation.
 
 ** Results
 
-This block is filled only from =probe-results.json= after a successful
-run. No downstream pipeline implementation follows these results.
+The Harper block plays, and so do the six Flux renders. Tejas chose
+=flux-haley-en= as the closest to Harper.
 
-On 2026-09-22, the initial live run stopped at the $10 ceiling while
-bisection was still refining an input limit: its next request projected
-$10.49. This is a design surprise, so no pipeline work has started.
-That initial client did not yet checkpoint each request; consequently,
-there is no trustworthy record of the attempted sizes or generation IDs
-to report as evidence. The generated client now checkpoints after every
-request and records a blocked result before raising, but it must not be
-rerun without reviewing the ceiling and probe strategy.
+Deepgram's ceiling is 2,000 characters. =mai-voice-2-flash= has no
+failure through 160,000. =mai-voice-2= has no failure through 80,000,
+and was not taken further. Billing reconciliation is skipped.
 
-None of the four required findings can be claimed from the stopped run:
-input limits are not established, no free-tier voice has been selected
-by Tejas, MP3 playback is not recorded, and provider billing is not
-reconciled. Tejas must review this stop condition before authorising
-another bounded probe; no downstream ticket may begin.
+The tangled client and =run-experiment.sh= are removed. Downstream work
+has not started. The Deepgram ceiling is below the 8,000-character
+figure that earlier draft used as a working chunk.
 
 * Return Contract
 
@@ -735,7 +625,7 @@ another bounded probe; no downstream ticket may begin.
 - Unresolved or changed assumptions.
 - The completed Review Map.
 - Locations of the human-review-critical Org blocks.
-- Generated artefacts and the tangle drift check.
+- Generated artefacts.
 - Claims it cannot verify for the user — in particular, every
   subjective judgement, which only the listener can make.
 - The Git review baseline (=git rev-parse HEAD= captured before the
@@ -756,7 +646,7 @@ None.
 
 | Unknown | Bound | Risk | Planned check | Owner |
 |---------+-------+------+---------------+-------|
-| Maximum input characters per request for the three models | Between 2,000 and 20,000; bisected in the probe | A wrong chunk size adds seams or triggers truncation | Probe task 1 | Implementing agent |
+| Maximum input characters per request for the three models | Deepgram ceiling is 2,000. Flash accepted through 160,000. MAI Voice 2 accepted through 80,000 | A chunk above 2,000 characters cannot be sent to Deepgram | Length block under Parameters | Implementing agent |
 | Deepgram free-tier rate limits | Unknown; 24 excerpt renders is a small load | Throttling stalls the run | Catch 429 and back off; report if hit | Implementing agent |
 | The P5 respelling table is derived from baseline listening | Its improvement is fitted to errors already observed | Over-claiming that "a pronunciation lexicon helps" | Report as "these specific fixes worked"; the post must not generalise | Tejas |
 | The Deepgram leg changes vendor and voice together | Reported as a vendor-plus-voice difference, never as model tier | Attributing a voice preference to model quality | MAI Flash against MAI full carries the tier claim instead | Tejas |
