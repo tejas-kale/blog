@@ -77,6 +77,9 @@ pyproject.toml
 # Knit output and local caches
 notebooks/**/*.html
 notebooks/**/*_files/
+notebooks/pl-squad-tenure-points/raw/
+__pycache__/
+*.pyc
 .quarto/
 _vendor/
 

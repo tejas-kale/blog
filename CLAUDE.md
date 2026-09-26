@@ -38,3 +38,17 @@ note: true   # optional. Lab notes only. Essays omit this field.
 ```
 
 Link notebooks on GitHub. Do not publish knitted HTML or review tables under `static/`.
+
+## Agent skills
+
+### Issue tracker
+
+Issues for this repo live in GitHub Issues. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default triage labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout. See `docs/agents/domain.md`.
