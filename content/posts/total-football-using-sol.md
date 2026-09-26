@@ -1,6 +1,6 @@
 ---
 title: "Making a Total Football video with GPT-6 Sol"
-date: "2026-09-13"
+date: "2026-09-26"
 draft: false
 description: "An experiment in using GPT-6 Sol and Codex to create an animated explainer on Total Football."
 ---
