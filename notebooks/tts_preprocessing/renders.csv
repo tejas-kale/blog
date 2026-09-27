@@ -1,0 +1,7 @@
+article,passage,condition,model,chunk_size,characters,chunk_count,cost_usd,generation_id,http_status,input_sha256,filename
+openai,planned-excerpt,P0,deepgram/flux-tts:free,350,1845,2,0,gen-tts-1790513901-8T5Rmv5BHgLbhwxIAOpy,200,af3b6eb747fb557bb9dff4c00895a2e0b5f0762dc298eb264a1ecee01604a20c,audio/openai-p0-01.mp3
+openai,planned-excerpt,P0,deepgram/flux-tts:free,350,859,2,0,gen-tts-1790513984-IW2oWL6BZ6ysbLyO5Tea,200,75466e04b888c088b22c23da1c51cfa34a194d00a95fcc47713d8ac6de4858bd,audio/openai-p0-02.mp3
+modi,planned-excerpt,P0,deepgram/flux-tts:free,350,726,4,0,gen-tts-1790514031-9hj0yuJNNmHEuJsscEIB,200,d4aee182b0b7530ee0aa3822beb08a7ec66f98a536e83d9e0788fb5221938a12,audio/modi-p0-01.mp3
+modi,planned-excerpt,P0,deepgram/flux-tts:free,350,1241,4,0,gen-tts-1790514063-uUr3HRMkIX4uzxh9yIqN,200,7d95e9907476ee3a936f532d37e3282ac6cff11c118b34e5f57b99d8e0e4b920,audio/modi-p0-02.mp3
+modi,planned-excerpt,P0,deepgram/flux-tts:free,350,1375,4,0,gen-tts-1790514119-3BG6VVOiihq80LdrZb4i,200,15506a993e7c378a68024ec42a936407c02e9c4103c6afe1666bd32d14b9eb47,audio/modi-p0-03.mp3
+modi,planned-excerpt,P0,deepgram/flux-tts:free,350,1556,4,0,gen-tts-1790514179-C6VEt32KC2zXM8At5o1s,200,9b14635a5375afdd22b1a38b91c9be61c83214c41a27452788c84b4132959c5d,audio/modi-p0-04.mp3

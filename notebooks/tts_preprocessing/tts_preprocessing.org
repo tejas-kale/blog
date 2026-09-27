@@ -277,7 +277,7 @@ whose size or duration assertion fails.
 - Environment and dependencies :: Reuse the existing
   =/Users/tejaskale/Code/blog/.venv= (Python 3.11.6, created by =uv=).
   Install what this experiment adds with =uv pip install --python
-  /Users/tejaskale/Code/blog/.venv/bin/python <packages>=. Because
+  /Users/tejaskale/Code/blog/.venv/bin/python requests pysbd==0.3.4=. Because
   =.gitignore= excludes =pyproject.toml=, =uv.lock=, and =.venv/=, this
   repository keeps no committed dependency record; a source block in
   this file prints the resolved versions of the packages the experiment
@@ -336,9 +336,18 @@ to report:
 Stop and report if any of these surprises you, rather than adapting the
 design silently.
 
-Billing reconciliation is skipped. The first block below is the MP3
-check: OpenRouter returned =audio/mpeg=, and the file plays from this
-notebook.
+Decisions from this probe, 2026-09-27:
+
+- =mai-voice-2= and =mai-voice-2-flash= use a working limit of 20,000
+  characters. Both accepted at least that much: Voice 2 through 80,000,
+  Flash through 160,000.
+- =deepgram/flux-tts:free= stays at its measured ceiling of 2,000
+  characters. A 20,000-character input does not fit that model.
+- Billing came in under the estimate. That is accepted, and no further
+  reconciliation is required.
+
+The first block below is the MP3 check: OpenRouter returned
+=audio/mpeg=, and the file plays from this notebook.
 
 ** Parameters
 
@@ -591,28 +600,291 @@ print(f"estimated_spend_usd={spent:.4f}")
 :   2000 accepted; 5000 accepted; 10000 accepted; 20000 accepted; 40000 accepted; 80000 accepted; 160000 budget
 : estimated_spend_usd=8.2090
 
-Deepgram rejects 2,001 characters, so its ceiling is 2,000. A chunk of
-8,000 characters does not fit that model. =mai-voice-2-flash= accepted
-every length up to the 160,000 search cap, and =mai-voice-2= accepted
-every length through 80,000. The 160,000 call for =mai-voice-2= was not
-sent; it would have pushed the estimate past $10. This block's
-estimated spend was $8.21. The large replies came back in about a
-second and were closed after the headers, so "accepted" means the API
-returned MP3, not that the whole passage was played or checked for
-truncation.
+Deepgram rejects 2,001 characters, so its ceiling is 2,000.
+=mai-voice-2-flash= accepted every length up to the 160,000 search cap,
+and =mai-voice-2= accepted every length through 80,000. The 160,000
+call for =mai-voice-2= was not sent; it would have pushed the estimate
+past $10. This block's estimated spend was $8.21. The working limit for
+both MAI models is 20,000 characters, which both of them accepted. The
+large replies came back in about a second and were closed after the
+headers, so "accepted" means the API returned MP3.
 
 ** Results
 
 The Harper block plays, and so do the six Flux renders. Tejas chose
 =flux-haley-en= as the closest to Harper.
 
-Deepgram's ceiling is 2,000 characters. =mai-voice-2-flash= has no
-failure through 160,000. =mai-voice-2= has no failure through 80,000,
-and was not taken further. Billing reconciliation is skipped.
+Working limits: 20,000 characters for =mai-voice-2= and
+=mai-voice-2-flash=, and 2,000 characters for =deepgram/flux-tts:free=.
+Billing came in under the estimate and is accepted.
 
-The tangled client and =run-experiment.sh= are removed. Downstream work
-has not started. The Deepgram ceiling is below the 8,000-character
-figure that earlier draft used as a working chunk.
+The tangled client and =run-experiment.sh= are removed. These decisions
+close the probe. Downstream work has not started.
+
+* Issue 24: raw excerpt baseline
+
+This is the first end-to-end condition: the planned excerpts, unchanged
+from the clippings, split at sentence boundaries, rendered to MP3, and
+recorded in =renders.csv=. The 350-word target keeps chunks below
+Deepgram's measured 2,000-character ceiling in ordinary prose; the
+hard character limit is 1,900. No preprocessing is applied.
+
+** Inputs and excerpt extraction
+
+Copy the two source clippings into =inputs/= before running this block.
+It writes their hashes and the two exact excerpts for review.
+
+- OpenAI excerpt :: [[file:inputs/excerpt-openai.txt][open excerpt]]
+- Modi excerpt :: [[file:inputs/excerpt-modi.txt][open excerpt]]
+- OpenAI clipping SHA-256 :: =f8eab29a56b1c77daa312639b96520851eb80ed670fbed705c6d8891d394df7f=
+- Modi clipping SHA-256 :: =c29ac5d804c1a8ce93814ff4ce9a4b9186fe1d6fb724d5418e25df79fa23429d=
+
+#+begin_src python :tangle no :session *tts* :results output replace
+from pathlib import Path
+import hashlib
+import re
+
+root = Path("notebooks/tts_preprocessing")
+if not root.is_dir():
+    root = Path(".")
+inputs = root / "inputs"
+inputs.mkdir(exist_ok=True)
+sources = {
+    "openai": Path("/Users/tejaskale/Documents/Cowork Root/00_Resources/Clippings/Inside OpenAI’s agentic software factory.md"),
+    "modi": Path("/Users/tejaskale/Documents/Cowork Root/00_Resources/Clippings/The rise of Narendra Modi.md"),
+}
+for key, source in sources.items():
+    target = inputs / f"{key}.md"
+    if not target.exists():
+        target.write_bytes(source.read_bytes())
+    digest = hashlib.sha256(target.read_bytes()).hexdigest()
+    print(f"{key} sha256={digest}")
+
+def excerpt(key, start, end):
+    text = (inputs / f"{key}.md").read_text(encoding="utf-8")
+    first, last = text.index(start), text.index(end, text.index(start)) + len(end)
+    result = text[first:last]
+    (inputs / f"excerpt-{key}.txt").write_text(result, encoding="utf-8")
+    return result
+
+openai_text = excerpt("openai", "Today, we cover:",
+                      "![](images/inside-openais-agentic-software-factory-0.png)")
+modi_text = excerpt("modi", "**IN THE SECOND WEEK OF JANUARY 2011**",
+                    "One estimate suggested that industry in Gujarat had lost Rs 20 billion ($409 million) in the riots.")
+for key, value in (("openai", openai_text), ("modi", modi_text)):
+    print(f"{key}: {len(value)} chars, {len(value.split())} words")
+    print(value[:180].replace("\n", " ") + " …")
+#+end_src
+
+#+RESULTS:
+: openai sha256=f8eab29a56b1c77daa312639b96520851eb80ed670fbed705c6d8891d394df7f
+: modi sha256=c29ac5d804c1a8ce93814ff4ce9a4b9186fe1d6fb724d5418e25df79fa23429d
+: openai: 2704 chars, 405 words
+: Today, we cover:  - **Codex takes over at OpenAI.** In a matter of months, nearly all OpenAI’s non-engineers moved over to Codex and ChatGPT Work without a mandate from above for i …
+: modi: 4898 chars, 782 words
+: **IN THE SECOND WEEK OF JANUARY 2011**, more than 10,000 businessmen from 100 countries descended on Gandhinagar for the fifth instalment of the biannual summit branded as “Vibrant …
+
+** Sentence-safe chunks
+
+pySBD 0.3.4 identifies English sentence spans. The chunker slices the
+original text at those offsets, preserving every character; it keeps
+whole paragraphs together when they fit and splits longer paragraphs at
+sentence boundaries. The round-trip assertion checks the spans.
+
+#+begin_src python :tangle no :session *tts* :results output replace
+import pysbd
+
+sentence_segmenter = pysbd.Segmenter(language="en", clean=False, char_span=True)
+
+def make_chunks(text, word_limit=350, char_limit=1900):
+    paragraphs = re.split(r"(\n{2,})", text)
+    chunks, current = [], ""
+    for index in range(0, len(paragraphs), 2):
+        paragraph = paragraphs[index]
+        separator = paragraphs[index + 1] if index + 1 < len(paragraphs) else ""
+        unit = paragraph + separator
+        if len(unit.split()) <= word_limit and len(unit) <= char_limit:
+            if current and (len((current + unit).split()) > word_limit or
+                            len(current + unit) > char_limit):
+                chunks.append(current)
+                current = unit
+            else:
+                current += unit
+            continue
+        spans = sentence_segmenter.segment(unit)
+        sentences = [unit[span.start:span.end] for span in spans]
+        if "".join(sentences) != unit:
+            raise ValueError("Sentence spans did not preserve the source text")
+        for sentence in sentences:
+            candidate = current + sentence
+            if len(sentence) > char_limit or len(sentence.split()) > word_limit:
+                raise ValueError("A single sentence exceeds a chunk budget")
+            if current and (len(candidate.split()) > word_limit or len(candidate) > char_limit):
+                chunks.append(current)
+                current = sentence
+            else:
+                current = candidate
+    if current:
+        chunks.append(current)
+    assert "".join(chunks) == text
+    assert all(len(c.split()) <= word_limit and len(c) <= char_limit for c in chunks)
+    return chunks
+
+for name, text in (("openai", openai_text), ("modi", modi_text)):
+    parts = make_chunks(text)
+    print(f"{name}: {len(parts)} chunks; max words={max(map(lambda x: len(x.split()), parts))}; max chars={max(map(len, parts))}")
+#+end_src
+
+#+RESULTS:
+: openai: 2 chunks; max words=275; max chars=1845
+: modi: 4 chunks; max words=254; max chars=1556
+
+** Renderer and manifest
+
+The transport is injectable so the same renderer can be verified without
+network access. A successful response must contain a non-empty MP3.
+=require_duration= sets a deliberately lenient floor at 360 words per
+minute. The calculation is =word_count * 60 / 360= seconds; for example,
+90 words must last at least 15 seconds. Shorter audio is likely
+truncated. This is only a coarse length check; the Whisper transcript
+remains the check for missing or changed words.
+
+#+begin_src python :tangle no :session *tts* :results output replace
+import csv
+import os
+import requests
+
+def render(text, model, voice, transport=requests.post):
+    response = transport(
+        "https://openrouter.ai/api/v1/audio/speech",
+        headers={"Authorization": f"Bearer {os.environ['OPENROUTER_API_KEY']}"},
+        json={"model": model, "input": text, "voice": voice,
+              "response_format": "mp3", "speed": 1}, timeout=120,
+    )
+    response.raise_for_status()
+    if not response.headers.get("Content-Type", "").startswith("audio/mpeg"):
+        raise ValueError("Expected audio/mpeg response")
+    if not response.content:
+        raise ValueError("Empty audio response")
+    generation = response.headers.get("X-Generation-Id")
+    if not generation:
+        raise ValueError("Missing X-Generation-Id")
+    return response.content, generation
+
+MAX_PLAUSIBLE_WPM = 360
+
+def require_duration(word_count, seconds):
+    minimum_seconds = word_count * 60 / MAX_PLAUSIBLE_WPM
+    if seconds < minimum_seconds:
+        raise ValueError("Audio is shorter than the minimum duration")
+
+def append_manifest(row, path=None):
+    path = path or root / "renders.csv"
+    fields = list(row)
+    fresh = not path.exists()
+    with path.open("a", newline="", encoding="utf-8") as stream:
+        writer = csv.DictWriter(stream, fieldnames=fields)
+        if fresh:
+            writer.writeheader()
+        writer.writerow(row)
+#+end_src
+
+#+RESULTS:
+
+** Offline verification
+
+Run this block before rendering. It covers extraction boundaries,
+sentence-safe chunking, exact round-trip, mock transport, error status,
+and empty audio. Evaluating this block is the single offline
+verification command for issue 24.
+
+#+begin_src python :tangle no :session *tts* :results output replace
+from unittest.mock import Mock
+
+assert openai_text.startswith("Today, we cover:")
+assert openai_text.endswith("![](images/inside-openais-agentic-software-factory-0.png)")
+assert modi_text.startswith("**IN THE SECOND WEEK OF JANUARY 2011**")
+assert modi_text.endswith("One estimate suggested that industry in Gujarat had lost Rs 20 billion ($409 million) in the riots.")
+fixture = "Mr. Smith spoke.  Then left!\n\nA third sentence?"
+fixture_chunks = make_chunks(fixture, word_limit=3, char_limit=40)
+assert "".join(fixture_chunks) == fixture
+assert fixture_chunks[0].strip() == "Mr. Smith spoke."
+assert all(chunk.rstrip()[-1] in ".!?" for chunk in fixture_chunks[:-1])
+try:
+    require_duration(90, 1)
+    raise AssertionError("Truncated audio must fail the duration floor")
+except ValueError:
+    pass
+
+ok = Mock(status_code=200, headers={"Content-Type": "audio/mpeg", "X-Generation-Id": "mock-id"}, content=b"mp3")
+ok.raise_for_status.return_value = None
+payload, generation = render("hello", "model", "voice", transport=Mock(return_value=ok))
+assert (payload, generation) == (b"mp3", "mock-id")
+bad = Mock()
+bad.raise_for_status.side_effect = requests.HTTPError("bad status")
+try:
+    render("hello", "model", "voice", transport=Mock(return_value=bad))
+    raise AssertionError("HTTP errors must propagate")
+except requests.HTTPError:
+    pass
+empty = Mock(status_code=200, headers={"Content-Type": "audio/mpeg"}, content=b"")
+empty.raise_for_status.return_value = None
+try:
+    render("hello", "model", "voice", transport=Mock(return_value=empty))
+    raise AssertionError("Empty responses must fail")
+except ValueError:
+    pass
+print("issue 24 offline checks passed")
+#+end_src
+
+#+RESULTS:
+: issue 24 offline checks passed
+
+** Render and play
+
+After reviewing the two extracted excerpts above, render one raw-baseline
+passage per article with the chosen free voice. MP3 links use =afplay=.
+
+#+begin_src python :tangle no :session *tts* :results output raw replace
+import subprocess
+
+render_plan = (
+    ("openai", openai_text, "deepgram/flux-tts:free", "flux-haley-en"),
+    ("modi", modi_text, "deepgram/flux-tts:free", "flux-haley-en"),
+)
+for article, text, model, voice in render_plan:
+    chunks = make_chunks(text)
+    for number, chunk in enumerate(chunks, 1):
+        digest = hashlib.sha256(chunk.encode("utf-8")).hexdigest()
+        audio, generation = render(chunk, model, voice)
+        filename = f"audio/{article}-p0-{number:02d}.mp3"
+        output = root / filename
+        output.parent.mkdir(exist_ok=True)
+        output.write_bytes(audio)
+        probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                               "-of", "default=noprint_wrappers=1:nokey=1", str(output)],
+                              check=True, capture_output=True, text=True)
+        duration = float(probe.stdout)
+        require_duration(len(chunk.split()), duration)
+        append_manifest({"article": article, "passage": "planned-excerpt",
+                         "condition": "P0", "model": model, "chunk_size": 350,
+                         "characters": len(chunk), "chunk_count": len(chunks),
+                         "cost_usd": 0, "generation_id": generation,
+                         "http_status": 200, "input_sha256": digest,
+                         "filename": filename})
+        print(f'[[elisp:(start-process "tts-{article}-{number}" nil "afplay" '
+              f'(expand-file-name "{filename}" '
+              '(file-name-directory (buffer-file-name))))]'
+              f'[Play {filename}]]')
+#+end_src
+
+#+RESULTS:
+[[elisp:(start-process "tts-openai-1" nil "afplay" (expand-file-name "audio/openai-p0-01.mp3" (file-name-directory (buffer-file-name))))][Play audio/openai-p0-01.mp3]]
+[[elisp:(start-process "tts-openai-2" nil "afplay" (expand-file-name "audio/openai-p0-02.mp3" (file-name-directory (buffer-file-name))))][Play audio/openai-p0-02.mp3]]
+[[elisp:(start-process "tts-modi-1" nil "afplay" (expand-file-name "audio/modi-p0-01.mp3" (file-name-directory (buffer-file-name))))][Play audio/modi-p0-01.mp3]]
+[[elisp:(start-process "tts-modi-2" nil "afplay" (expand-file-name "audio/modi-p0-02.mp3" (file-name-directory (buffer-file-name))))][Play audio/modi-p0-02.mp3]]
+[[elisp:(start-process "tts-modi-3" nil "afplay" (expand-file-name "audio/modi-p0-03.mp3" (file-name-directory (buffer-file-name))))][Play audio/modi-p0-03.mp3]]
+[[elisp:(start-process "tts-modi-4" nil "afplay" (expand-file-name "audio/modi-p0-04.mp3" (file-name-directory (buffer-file-name))))][Play audio/modi-p0-04.mp3]]
 
 * Return Contract
 
@@ -633,8 +905,10 @@ figure that earlier draft used as a working chunk.
 
 ** Implementation results
 
-To be completed by the implementing agent without silently changing the
-agreed plan above.
+Issue 24's six P0 chunks are rendered and recorded in =renders.csv=.
+Tejas confirms the audio sounds decent, though it is too long for an
+extended listening session. The offline checks pass. Audio quality is
+subjective and has not been scored against the experiment's rubric.
 
 * Unknowns and out of scope
 
@@ -646,7 +920,7 @@ None.
 
 | Unknown | Bound | Risk | Planned check | Owner |
 |---------+-------+------+---------------+-------|
-| Maximum input characters per request for the three models | Deepgram ceiling is 2,000. Flash accepted through 160,000. MAI Voice 2 accepted through 80,000 | A chunk above 2,000 characters cannot be sent to Deepgram | Length block under Parameters | Implementing agent |
+| Maximum input characters per request for the three models | Working limits: 20,000 for both MAI models; 2,000 measured ceiling for Deepgram | A Deepgram request above 2,000 characters is rejected | Length block under Parameters | Tejas |
 | Deepgram free-tier rate limits | Unknown; 24 excerpt renders is a small load | Throttling stalls the run | Catch 429 and back off; report if hit | Implementing agent |
 | The P5 respelling table is derived from baseline listening | Its improvement is fitted to errors already observed | Over-claiming that "a pronunciation lexicon helps" | Report as "these specific fixes worked"; the post must not generalise | Tejas |
 | The Deepgram leg changes vendor and voice together | Reported as a vendor-plus-voice difference, never as model tier | Attributing a voice preference to model quality | MAI Flash against MAI full carries the tier claim instead | Tejas |

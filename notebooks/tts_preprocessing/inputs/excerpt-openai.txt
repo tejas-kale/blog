@@ -1,0 +1,27 @@
+Today, we cover:
+
+- **Codex takes over at OpenAI.** In a matter of months, nearly all OpenAI’s non-engineers moved over to Codex and ChatGPT Work without a mandate from above for it.
+- **Death of the IDE & pull requests.** IDE usage has been down since January when Codex usage started to surge. PRs and code reviews need to be rethought.
+- **OpenAI’s agentic software factory.** OpenAI has built a “software factory” with several automated, agentic feedback loops: for example, Perf Factory monitors production and kicks off Codex agents to automatically fix performance issues.
+- **How engineering tooling & practices are changing.** Hand-built internal tools are slowly being replaced by Codex, which is increasingly preferred for debugging over specialized tools. Harness efficiency is critical in software factories.
+- **Engineering for a billion users: how OpenAI scales up its infra.** They buy first and take it in-house later. Also, geographic infra distribution, capacity planning tactics and challenges.
+- **Making OpenAI’s API more reliable and performant**. CPUs are becoming a bottleneck, doing slower deployments on purpose, and solving load challenges.
+- **How the software engineering job is changing.** Engineering specializations are disappearing, judgment and agency are more important, and it only takes one or two engineers for previously “impossible” rewrites and migrations to succeed.
+
+*Before we start, a scheduling update: I’m in New York for the week, attending the LDX3 conference and visiting a few startups and tech companies in the city, so there will be no edition of The Pulse on Thursday. Normal service resumes next week!*
+
+*The bottom of this article could be cut off in some email clients. [Read the full article uninterrupted, online.](https://newsletter.pragmaticengineer.com/p/openai-software-factory)*
+
+[Read the full article online](https://newsletter.pragmaticengineer.com/p/openai-software-factory)
+
+## 1. Codex takes over at OpenAI
+
+The takeaway from my visit to the company’s headquarters which really sticks out is that Codex – and lately Codex *and* ChatGPT Work – have taken over *everything* there, starting in around January. Desktop lead, Andrew Ambrosino, told me:
+
+> “The big theme of the past months has been that everything is now a coding agent. Whether the visible code is your output or not, agents write your artifacts.
+>
+> Think of it like this: your entire life is via software. You have these powerful tools (agents) in your computer, and the ability to loop and reason and write code is the ability to do everything.”
+
+The token usage chart below shows this sudden adoption surge:
+
+![](images/inside-openais-agentic-software-factory-0.png)
