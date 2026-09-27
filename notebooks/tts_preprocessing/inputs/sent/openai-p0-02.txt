@@ -1,0 +1,13 @@
+[Read the full article online](https://newsletter.pragmaticengineer.com/p/openai-software-factory)
+
+## 1. Codex takes over at OpenAI
+
+The takeaway from my visit to the company’s headquarters which really sticks out is that Codex – and lately Codex *and* ChatGPT Work – have taken over *everything* there, starting in around January. Desktop lead, Andrew Ambrosino, told me:
+
+> “The big theme of the past months has been that everything is now a coding agent. Whether the visible code is your output or not, agents write your artifacts.
+>
+> Think of it like this: your entire life is via software. You have these powerful tools (agents) in your computer, and the ability to loop and reason and write code is the ability to do everything.”
+
+The token usage chart below shows this sudden adoption surge:
+
+![](images/inside-openais-agentic-software-factory-0.png)

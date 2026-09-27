@@ -267,8 +267,12 @@ whose size or duration assertion fails.
 | Did the structural strip remove only chrome? | Preprocessing stages, P2 | =diffs/P0-to-P2-*.diff= and the micro-fixture | No body prose in the removal side of the diff | Missing paragraphs sound like a coherent but different article |
 | Are the expanded spoken forms correct? | Preprocessing stages, P4 | Expansion fixture table | All 25 hand-written pairs pass | Fluent, wrong numbers and dates throughout |
 | Is the respelling table an improvement? | Preprocessing stages, P5 | Blind rubric item 2 | P5 scores no worse than P4 on mispronunciation | A "fix" that makes pronunciation worse |
-| Did the models read the text verbatim? | Verification Contract, row 1 | Whisper diff per render | Word error rate under 2% | Conclusions drawn from audio that omits content |
+| Did the models read the text verbatim? | Verification Contract, row 1 | =transcripts/= and =diffs/=, keyed in =renders.csv= | WER under 2%; every higher score flagged for reading | Conclusions drawn from audio that omits content |
+| Is each transcript compared with the exact text sent? | Issue 24 renderer and issue 25 verifier | =inputs/sent/= SHA-256 checked against =input_sha256= | Exact text matches each render's hash | WER refers to the wrong source text |
 | Do chunk seams jump in volume? | Render design, chunk comparison | =ebur128= seam deltas | No delta above 3 LU | The seam problem is misattributed to preprocessing |
+| Is chunk duration plausible for its spoken word count? | Issue 25 verifier | =duration_seconds= against =expected_min_duration_seconds= in =renders.csv= | No duration flag at 360 words per minute | Truncated audio goes unnoticed |
+| Does the loudness parser return a known level? | Issue 25 offline verification | Five-second 1 kHz fixture measured by =ffmpeg ebur128= | -23.00 LUFS within 0.5 LU | Every chunk loudness value is suspect |
+| Are all quality metrics attached to unique renders? | Issue 25 verifier | =renders.csv= field and key validation | One row per render key; metrics and artefact paths are present | Quality evidence is lost or attributed to another render |
 | Does preprocessing or model tier matter more? | Results | Score sheet across three models | Stated as a comparison with the blinding seed recorded | The post's central claim is unsupported |
 | Did the run stay inside budget? | Verification Contract, row 7 | =renders.csv= cost column | Under $10, within 5% of the dashboard | Silent overspend |
 
@@ -277,16 +281,35 @@ whose size or duration assertion fails.
 - Environment and dependencies :: Reuse the existing
   =/Users/tejaskale/Code/blog/.venv= (Python 3.11.6, created by =uv=).
   Install what this experiment adds with =uv pip install --python
-  /Users/tejaskale/Code/blog/.venv/bin/python requests pysbd==0.3.4=. Because
+  /Users/tejaskale/Code/blog/.venv/bin/python requests pysbd==0.3.4 mlx-whisper=.
+  Whisper runs locally with the =mlx-community/whisper-tiny= model; its first
+  run downloads the model. Because
   =.gitignore= excludes =pyproject.toml=, =uv.lock=, and =.venv/=, this
   repository keeps no committed dependency record; a source block in
   this file prints the resolved versions of the packages the experiment
   adds, and *its output is committed* so a future reader can
   reconstruct the environment. =ffmpeg= and =afplay= are already on
   =PATH=; =mpv= is not and is not used.
+
+#+begin_src python :tangle no :results output replace
+import importlib.metadata as metadata
+import platform
+
+print(f"Python {platform.python_version()}")
+for package in ("requests", "pysbd", "mlx-whisper"):
+    print(f"{package} {metadata.version(package)}")
+#+end_src
+
+#+RESULTS:
+: Python 3.11.6
+: requests 2.32.5
+: pysbd 0.3.4
+: mlx-whisper 0.4.3
 - Run :: Evaluate the source blocks under Parameters. Each calls
   OpenRouter with =OPENROUTER_API_KEY= and, when it writes audio, puts
-  the MP3 under =audio/=. Nothing in this file tangles to a script.
+  the MP3 under =audio/=. The Issue 25 quality-check block tangles to
+  =quality_checks.py= in this directory; that generated module is used
+  by the render block and =verify.sh=.
 - Parameters and date ranges :: Models and voices are in those blocks.
   Render chunks stay at about 400 words, with a 1,200-word comparison,
   as under Render design. Excerpt boundaries stay in the plan above.
@@ -296,12 +319,17 @@ whose size or duration assertion fails.
   =scores.csv=. Synthesis itself is non-deterministic — =/audio/speech=
   exposes no seed — so identical text may render differently on
   repeat. This is stated, not controlled.
-- Generated artefacts :: =audio/= (gitignored); =diffs/=, =inputs/=,
-  =renders.csv=, =scores.csv=, and =lexicon.csv= (committed when the
-  experiment produces them).
-- Verification command :: =./verify.sh=, which runs the micro-fixture
-  tests, the Whisper diff, the loudness checks, and the hash
-  recomputation.
+- Generated artefacts :: =audio/= (gitignored); =quality_checks.py=
+  (tangled from this file); =diffs/=, =inputs/=, =renders.csv=,
+  =scores.csv=, and =lexicon.csv= (committed when the experiment
+  produces them).
+- Verification command :: =./verify.sh=, which first tangles
+  =quality_checks.py= from this Org file, then validates the saved
+  Whisper transcript and word diff against the exact sent text, checks
+  the audio hash, recomputes loudness, seam deltas, duration flags, and
+  manifest integrity, then runs offline micro-fixtures including a
+  known-level loudness WAV. ASR runs once when each render is made; the
+  verifier reuses its transcript cache and does not invoke the model.
 
 ** Expected cost
 
@@ -743,11 +771,11 @@ for name, text in (("openai", openai_text), ("modi", modi_text)):
 
 The transport is injectable so the same renderer can be verified without
 network access. A successful response must contain a non-empty MP3.
-=require_duration= sets a deliberately lenient floor at 360 words per
-minute. The calculation is =word_count * 60 / 360= seconds; for example,
-90 words must last at least 15 seconds. Shorter audio is likely
-truncated. This is only a coarse length check; the Whisper transcript
-remains the check for missing or changed words.
+=duration_metrics= checks a deliberately lenient floor at 360 words
+per minute. The calculation is =word_count * 60 / 360= seconds; for
+example, 90 words must last at least 15 seconds. Shorter audio is flagged
+as likely truncation. The Whisper transcript checks for missing or
+changed words.
 
 #+begin_src python :tangle no :session *tts* :results output replace
 import csv
@@ -771,35 +799,190 @@ def render(text, model, voice, transport=requests.post):
         raise ValueError("Missing X-Generation-Id")
     return response.content, generation
 
-MAX_PLAUSIBLE_WPM = 360
-
-def require_duration(word_count, seconds):
-    minimum_seconds = word_count * 60 / MAX_PLAUSIBLE_WPM
-    if seconds < minimum_seconds:
-        raise ValueError("Audio is shorter than the minimum duration")
-
 def append_manifest(row, path=None):
     path = path or root / "renders.csv"
-    fields = list(row)
-    fresh = not path.exists()
-    with path.open("a", newline="", encoding="utf-8") as stream:
-        writer = csv.DictWriter(stream, fieldnames=fields)
-        if fresh:
-            writer.writeheader()
+    existing = list(csv.DictReader(path.open(newline="", encoding="utf-8"))) if path.exists() else []
+    old_fields = list(existing[0]) if existing else []
+    fields = list(dict.fromkeys([*old_fields, *row]))
+    with path.open("w", newline="", encoding="utf-8") as stream:
+        writer = csv.DictWriter(stream, fieldnames=fields, lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(existing)
         writer.writerow(row)
 #+end_src
 
 #+RESULTS:
 
+** Issue 25 quality-check functions
+
+These functions are the source for =quality_checks.py=. Tangle this
+block after editing it; the render block and =verify.sh= import the
+generated module.
+
+#+begin_src python :tangle quality_checks.py :comments no
+"""Independent audio checks for the TTS preprocessing experiment."""
+
+from __future__ import annotations
+
+import difflib
+import hashlib
+import json
+import re
+import subprocess
+import tempfile
+import unicodedata
+from pathlib import Path
+
+WHISPER_MODEL = "mlx-community/whisper-tiny"
+MAX_WER = 0.02
+MAX_SEAM_DELTA_LU = 3.0
+MAX_PLAUSIBLE_WPM = 360
+
+
+def words(text: str) -> list[str]:
+    """Tokenise speech text without case or punctuation differences."""
+    normalised = unicodedata.normalize("NFKC", text).casefold()
+    return re.findall(r"[\w]+(?:['’][\w]+)?", normalised, flags=re.UNICODE)
+
+
+def word_error_rate(reference: str, hypothesis: str) -> float:
+    """Return word-level Levenshtein distance divided by reference words."""
+    expected, actual = words(reference), words(hypothesis)
+    if not expected:
+        return 0.0 if not actual else 1.0
+    previous = list(range(len(actual) + 1))
+    for row, expected_word in enumerate(expected, 1):
+        current = [row]
+        for column, actual_word in enumerate(actual, 1):
+            current.append(min(
+                current[-1] + 1,
+                previous[column] + 1,
+                previous[column - 1] + (expected_word != actual_word),
+            ))
+        previous = current
+    return previous[-1] / len(expected)
+
+
+def word_diff(reference: str, hypothesis: str) -> str:
+    """Render a readable word-level diff for human review."""
+    return "\n".join(difflib.unified_diff(
+        words(reference), words(hypothesis), fromfile="sent", tofile="heard", lineterm=""
+    ))
+
+
+def probe_duration(audio_path: Path) -> float:
+    result = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", str(audio_path)],
+        check=True, capture_output=True, text=True,
+    )
+    return float(json.loads(result.stdout)["format"]["duration"])
+
+
+def integrated_loudness(audio_path: Path) -> float:
+    result = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-nostats", "-i", str(audio_path), "-filter_complex", "ebur128=framelog=verbose", "-f", "null", "-"],
+        check=True, capture_output=True, text=True,
+    )
+    matches = re.findall(
+        r"Integrated loudness:\s*I:\s*(-?\d+(?:\.\d+)?)\s*LUFS", result.stderr
+    )
+    if not matches:
+        raise ValueError(f"ffmpeg did not report integrated loudness for {audio_path}")
+    return float(matches[-1])
+
+
+def transcribe(audio_path: Path, model: str = WHISPER_MODEL) -> str:
+    """Transcribe locally with Whisper running through Apple's MLX runtime."""
+    try:
+        import mlx_whisper
+    except ImportError as error:
+        raise RuntimeError("Install mlx-whisper in the experiment Python environment") from error
+    response = mlx_whisper.transcribe(
+        str(audio_path), path_or_hf_repo=model, language="en", condition_on_previous_text=False
+    )
+    transcript = response.get("text", "").strip()
+    if not transcript:
+        raise ValueError(f"Whisper returned an empty transcript for {audio_path}")
+    return transcript
+
+
+def duration_metrics(text: str, seconds: float) -> dict[str, float | bool]:
+    expected = len(words(text))
+    minimum = expected * 60 / MAX_PLAUSIBLE_WPM
+    return {
+        "duration_seconds": round(seconds, 3),
+        "expected_min_duration_seconds": round(minimum, 3),
+        "duration_flag": seconds < minimum,
+    }
+
+
+def add_seam_metrics(rows: list[dict[str, object]], threshold: float = MAX_SEAM_DELTA_LU) -> None:
+    """Add each next-chunk loudness change to its left-hand render row."""
+    for index, row in enumerate(rows):
+        if index + 1 == len(rows):
+            row["seam_delta_lu"] = ""
+            row["seam_flag"] = False
+            continue
+        delta = abs(float(row["loudness_lufs"]) - float(rows[index + 1]["loudness_lufs"]))
+        row["seam_delta_lu"] = round(delta, 2)
+        row["seam_flag"] = delta > threshold
+
+
+def check_loudness_fixture() -> float:
+    """Generate a calibrated -23 LUFS tone and check ffmpeg parses it."""
+    with tempfile.TemporaryDirectory() as directory:
+        fixture = Path(directory) / "known-level.wav"
+        subprocess.run([
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i",
+            "sine=frequency=1000:duration=5", "-af", "volume=0.8",
+            "-c:a", "pcm_s16le", str(fixture),
+        ], check=True, capture_output=True, text=True)
+        measured = integrated_loudness(fixture)
+    if abs(measured - (-23.0)) > 0.5:
+        raise AssertionError(f"Expected fixture at -23 LUFS, parsed {measured:.2f} LUFS")
+    return measured
+
+
+def analyse_render(
+    audio_path: Path,
+    text: str,
+    transcript_path: Path,
+    diff_path: Path,
+    cached_transcript: str | None = None,
+    model: str = WHISPER_MODEL,
+) -> dict[str, object]:
+    transcript = cached_transcript if cached_transcript is not None else transcribe(audio_path, model)
+    transcript_path.parent.mkdir(parents=True, exist_ok=True)
+    diff_path.parent.mkdir(parents=True, exist_ok=True)
+    transcript_path.write_text(transcript + "\n", encoding="utf-8")
+    diff = word_diff(text, transcript)
+    diff_path.write_text(diff + ("\n" if diff else ""), encoding="utf-8")
+    wer = word_error_rate(text, transcript)
+    experiment_root = Path(__file__).resolve().parent
+    return {
+        "transcript_file": str(transcript_path.resolve().relative_to(experiment_root)),
+        "word_diff_file": str(diff_path.resolve().relative_to(experiment_root)),
+        "audio_sha256": hashlib.sha256(audio_path.read_bytes()).hexdigest(),
+        "asr_model": model,
+        "wer": round(wer, 5),
+        "wer_flag": wer > MAX_WER,
+        **duration_metrics(text, probe_duration(audio_path)),
+        "loudness_lufs": round(integrated_loudness(audio_path), 2),
+    }
+#+end_src
+
 ** Offline verification
 
-Run this block before rendering. It covers extraction boundaries,
-sentence-safe chunking, exact round-trip, mock transport, error status,
-and empty audio. Evaluating this block is the single offline
-verification command for issue 24.
+Run =./verify.sh= before rendering. It covers the offline contract,
+including a known-level loudness fixture; the command also validates
+manifest keys and required quality fields.
 
 #+begin_src python :tangle no :session *tts* :results output replace
 from unittest.mock import Mock
+import sys
+sys.path.insert(0, str(root))
+from quality_checks import (add_seam_metrics, check_loudness_fixture,
+                            duration_metrics, word_error_rate)
 
 assert openai_text.startswith("Today, we cover:")
 assert openai_text.endswith("![](images/inside-openais-agentic-software-factory-0.png)")
@@ -810,11 +993,15 @@ fixture_chunks = make_chunks(fixture, word_limit=3, char_limit=40)
 assert "".join(fixture_chunks) == fixture
 assert fixture_chunks[0].strip() == "Mr. Smith spoke."
 assert all(chunk.rstrip()[-1] in ".!?" for chunk in fixture_chunks[:-1])
-try:
-    require_duration(90, 1)
-    raise AssertionError("Truncated audio must fail the duration floor")
-except ValueError:
-    pass
+assert duration_metrics("one two three", 0.4)["duration_flag"]
+assert duration_metrics("one two three", 1.0)["duration_flag"] is False
+assert word_error_rate("Hello, WORLD!", "hello world") == 0
+assert word_error_rate("one two three", "one missing three") == 1 / 3
+metrics = [{"loudness_lufs": -20.0}, {"loudness_lufs": -24.0}]
+add_seam_metrics(metrics)
+assert metrics[0]["seam_delta_lu"] == 4.0 and metrics[0]["seam_flag"]
+assert metrics[1]["seam_delta_lu"] == "" and not metrics[1]["seam_flag"]
+fixture_lufs = check_loudness_fixture()
 
 ok = Mock(status_code=200, headers={"Content-Type": "audio/mpeg", "X-Generation-Id": "mock-id"}, content=b"mp3")
 ok.raise_for_status.return_value = None
@@ -834,19 +1021,21 @@ try:
     raise AssertionError("Empty responses must fail")
 except ValueError:
     pass
-print("issue 24 offline checks passed")
+print(f"issue 25 offline checks passed (fixture={fixture_lufs:.2f} LUFS)")
 #+end_src
-
-#+RESULTS:
-: issue 24 offline checks passed
 
 ** Render and play
 
 After reviewing the two extracted excerpts above, render one raw-baseline
-passage per article with the chosen free voice. MP3 links use =afplay=.
+passage per article with the chosen free voice. Each saved chunk is
+transcribed locally with Whisper. The transcript and word diff are kept
+under =transcripts/= and =diffs/=; metrics and flags are stored in
+=renders.csv=. MP3 links use =afplay=.
 
 #+begin_src python :tangle no :session *tts* :results output raw replace
-import subprocess
+import sys
+sys.path.insert(0, str(root))
+from quality_checks import add_seam_metrics, analyse_render
 
 render_plan = (
     ("openai", openai_text, "deepgram/flux-tts:free", "flux-haley-en"),
@@ -854,6 +1043,7 @@ render_plan = (
 )
 for article, text, model, voice in render_plan:
     chunks = make_chunks(text)
+    pending = []
     for number, chunk in enumerate(chunks, 1):
         digest = hashlib.sha256(chunk.encode("utf-8")).hexdigest()
         audio, generation = render(chunk, model, voice)
@@ -861,21 +1051,26 @@ for article, text, model, voice in render_plan:
         output = root / filename
         output.parent.mkdir(exist_ok=True)
         output.write_bytes(audio)
-        probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
-                               "-of", "default=noprint_wrappers=1:nokey=1", str(output)],
-                              check=True, capture_output=True, text=True)
-        duration = float(probe.stdout)
-        require_duration(len(chunk.split()), duration)
-        append_manifest({"article": article, "passage": "planned-excerpt",
-                         "condition": "P0", "model": model, "chunk_size": 350,
-                         "characters": len(chunk), "chunk_count": len(chunks),
-                         "cost_usd": 0, "generation_id": generation,
-                         "http_status": 200, "input_sha256": digest,
-                         "filename": filename})
+        transcript_path = root / "transcripts" / f"{article}-p0-{number:02d}.txt"
+        diff_path = root / "diffs" / f"{article}-p0-{number:02d}.diff"
+        sent_text_path = root / "inputs" / "sent" / f"{article}-p0-{number:02d}.txt"
+        sent_text_path.parent.mkdir(parents=True, exist_ok=True)
+        sent_text_path.write_text(chunk, encoding="utf-8")
+        quality = analyse_render(output, chunk, transcript_path, diff_path)
+        pending.append({"article": article, "passage": "planned-excerpt",
+                        "condition": "P0", "model": model, "chunk_size": 350,
+                        "characters": len(chunk), "chunk_count": len(chunks),
+                        "cost_usd": 0, "generation_id": generation,
+                        "http_status": 200, "input_sha256": digest,
+                        "filename": filename,
+                        "sent_text_file": str(sent_text_path.relative_to(root)), **quality})
         print(f'[[elisp:(start-process "tts-{article}-{number}" nil "afplay" '
               f'(expand-file-name "{filename}" '
               '(file-name-directory (buffer-file-name))))]'
               f'[Play {filename}]]')
+    add_seam_metrics(pending)
+    for row in pending:
+        append_manifest(row)
 #+end_src
 
 #+RESULTS:
@@ -903,12 +1098,104 @@ for article, text, model, voice in render_plan:
 - The Git review baseline (=git rev-parse HEAD= captured before the
   first implementation change) and the final commit SHA.
 
+** Six-clip quality statistics
+
+Evaluate this block to summarise the six generated P0 chunks from the
+manifest and their exact sent text. It does not invoke Whisper.
+
+#+begin_src python :tangle no :session *tts* :results output replace
+import csv
+from pathlib import Path
+from statistics import fmean, median
+
+root = Path("notebooks/tts_preprocessing")
+if not root.is_dir():
+    root = Path(".")
+
+with (root / "renders.csv").open(newline="", encoding="utf-8") as stream:
+    clips = list(csv.DictReader(stream))
+if len(clips) != 6:
+    raise ValueError(f"Expected the six generated clips, found {len(clips)}")
+
+measurements = []
+for row in clips:
+    sent_text = (root / row["sent_text_file"]).read_text(encoding="utf-8")
+    words = len(sent_text.split())
+    duration = float(row["duration_seconds"])
+    seam = row["seam_delta_lu"]
+    measurements.append({
+        "article": row["article"],
+        "clip": Path(row["filename"]).stem.rsplit("-", 1)[-1],
+        "words": words,
+        "wer_pct": float(row["wer"]) * 100,
+        "wer_flag": row["wer_flag"],
+        "duration": duration,
+        "rate_wpm": words * 60 / duration,
+        "lufs": float(row["loudness_lufs"]),
+        "seam": None if seam == "" else float(seam),
+        "seam_flag": row["seam_flag"],
+    })
+
+print("Article  clip  words  WER%   WER?  duration_s  rate_WPM  LUFS  seam_delta_LU  seam?")
+for item in measurements:
+    seam = "—" if item["seam"] is None else f"{item['seam']:.1f}"
+    print(f"{item['article']:<7}  {item['clip']:>4}  {item['words']:>5}  "
+          f"{item['wer_pct']:>5.2f}  {item['wer_flag']:<5}  "
+          f"{item['duration']:>10.1f}  {item['rate_wpm']:>8.1f}  "
+          f"{item['lufs']:>4.1f}  {seam:>13}  {item['seam_flag']}")
+
+wers = [item["wer_pct"] for item in measurements]
+durations = [item["duration"] for item in measurements]
+rates = [item["rate_wpm"] for item in measurements]
+levels = [item["lufs"] for item in measurements]
+seams = [item["seam"] for item in measurements if item["seam"] is not None]
+duration_flags = sum(
+    item["duration"] < float(row["expected_min_duration_seconds"])
+    for item, row in zip(measurements, clips)
+)
+print(f"\nWER: mean={fmean(wers):.2f}%, median={median(wers):.2f}%, "
+      f"range={min(wers):.2f}–{max(wers):.2f}%, flagged="
+      f"{sum(item['wer_flag'] == 'True' for item in measurements)}/6")
+print(f"Duration: total={sum(durations):.1f}s, mean={fmean(durations):.1f}s; "
+      f"speaking rate={fmean(rates):.1f} WPM mean "
+      f"({min(rates):.1f}–{max(rates):.1f}), duration flags="
+      f"{duration_flags}/6")
+print(f"Loudness: mean={fmean(levels):.2f} LUFS, "
+      f"range={min(levels):.1f} to {max(levels):.1f} LUFS")
+print(f"Seams: {len(seams)}, mean delta={fmean(seams):.2f} LU, "
+      f"maximum={max(seams):.1f} LU, flagged="
+      f"{sum(item['seam_flag'] == 'True' for item in measurements)}/{len(seams)}")
+#+end_src
+
+#+RESULTS:
+#+begin_example
+Article  clip  words  WER%   WER?  duration_s  rate_WPM  LUFS  seam_delta_LU  seam?
+openai     01    275  17.33  True        119.8     137.7  -18.3            0.2  False
+openai     02    130  15.83  True         68.4     114.1  -18.1              —  False
+modi       01    114  13.56  True         54.0     126.6  -17.8            0.0  False
+modi       02    207   9.39  True         81.3     152.7  -17.8            2.1  False
+modi       03    207   5.66  True         85.9     144.6  -19.9            2.0  False
+modi       04    254   6.95  True        106.6     143.0  -17.9              —  False
+
+WER: mean=11.45%, median=11.47%, range=5.66–17.33%, flagged=6/6
+Duration: total=516.1s, mean=86.0s; speaking rate=136.4 WPM mean (114.1–152.7), duration flags=0/6
+Loudness: mean=-18.30 LUFS, range=-19.9 to -17.8 LUFS
+Seams: 4, mean delta=1.07 LU, maximum=2.1 LU, flagged=0/4
+#+end_example
 ** Implementation results
 
 Issue 24's six P0 chunks are rendered and recorded in =renders.csv=.
 Tejas confirms the audio sounds decent, though it is too long for an
-extended listening session. The offline checks pass. Audio quality is
-subjective and has not been scored against the experiment's rubric.
+extended listening session. Issue 25 adds local transcribe-back,
+loudness, seam, duration, and manifest checks. Transcript diffs above
+the 2% WER threshold and seam deltas above 3 LU are flagged for review.
+
+The issue 25 verifier passes on all six existing renders. Whisper Tiny
+reports WERs from 5.66% to 17.33%, so all six transcript diffs are
+flagged for reading. All six duration checks pass; the largest seam
+delta is 2.1 LU. The -23 LUFS fixture parses as -23.00 LUFS. Transcript,
+diff, exact sent text, ASR model, and audio SHA-256 are recorded per
+render in =renders.csv=.
 
 * Unknowns and out of scope
 
