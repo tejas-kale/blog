@@ -1,0 +1,22 @@
+player_id,season_end,club,involvement,tenure,note
+kane,2010,Spurs U18,academy,,Academy season. Streak unchanged. Transfermarkt move Tottenham Yth. to Spurs U18 on 2009-07-01.
+kane,2011,Tottenham,mid_loan_parent,0.5,Senior from 2010-07-01. No Premier League appearances. Loan to Leyton Orient 2011-01-07 to 2011-05-31.
+kane,2011,Leyton Orient,mid_loan_in,0.5,League One loan. Not the whole campaign.
+kane,2012,Tottenham,mid_loan_parent,1,Loan to Millwall 2012-01-01 to 2012-05-31.
+kane,2012,Millwall,mid_loan_in,0.5,Championship loan.
+kane,2013,Tottenham,mid_loan_parent,1.5,"Two loans: Norwich 2012-08-31 to 2013-02-01, Leicester 2013-02-21 to 2013-05-14. Parent adds 0.5 once."
+kane,2013,Norwich,mid_loan_in,0.5,Premier League loan.
+kane,2013,Leicester,mid_loan_in,0.5,Championship loan.
+kane,2014,Tottenham,senior,2.5,Full senior season.
+kane,2015,Tottenham,senior,3.5,Full senior season.
+kane,2016,Tottenham,senior,4.5,Full senior season.
+kane,2017,Tottenham,senior,5.5,Full senior season.
+kane,2018,Tottenham,senior,6.5,Full senior season.
+kane,2019,Tottenham,senior,7.5,Full senior season.
+kane,2020,Tottenham,senior,8.5,Full senior season.
+kane,2021,Tottenham,senior,9.5,Full senior season.
+kane,2022,Tottenham,senior,10.5,Full senior season.
+kane,2023,Tottenham,senior,11.5,Full senior season.
+kane,2024,Bayern Munich,senior,1,"Permanent move 2023-08-12, before the campaign. Spurs streak ends. Bayern starts at 1."
+kane,2025,Bayern Munich,senior,2,Full senior season.
+kane,2026,Bayern Munich,senior,3,Full senior season.

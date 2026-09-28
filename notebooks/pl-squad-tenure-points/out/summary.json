@@ -1,0 +1,40 @@
+{
+  "starts": {
+    "cut": "starts",
+    "summary": {
+      "median": 0.03459493,
+      "trimmed_mean": 0.07644703,
+      "spearman": 0.07378996,
+      "n_defined": 18,
+      "n_at_least_10": 18,
+      "undefined_share": 0,
+      "undefined_clubs": [],
+      "below_min_clubs": ["Birmingham City", "Blackpool", "Bolton Wanderers", "Bournemouth", "Brentford", "Brighton and Hove Albion", "Burnley", "Cardiff City", "Charlton Athletic", "Coventry City", "Derby County", "Hull City", "Ipswich Town", "Leeds United", "Luton Town", "Norwich City", "Nottingham Forest", "Portsmouth", "Queens Park Rangers", "Reading", "Sheffield United", "Sheffield Wednesday", "Stoke City", "Swansea City", "Watford", "Wigan Athletic", "Wimbledon", "Wolverhampton Wanderers"]
+    },
+    "sentence": null,
+    "interval": [-0.09268158, 0.2442986],
+    "n_club_seasons": 441,
+    "n_blocked": 172,
+    "plotted": ["Liverpool", "Manchester United", "Everton", "Chelsea", "Aston Villa", "Arsenal", "Manchester City", "Southampton", "Tottenham Hotspur", "Fulham"],
+    "absent_clubs": ["Barnsley", "Bradford City", "Huddersfield Town"]
+  },
+  "appearances": {
+    "cut": "appearances",
+    "summary": {
+      "median": 0.01653427,
+      "trimmed_mean": 0.09674175,
+      "spearman": 0.0480312,
+      "n_defined": 18,
+      "n_at_least_10": 18,
+      "undefined_share": 0,
+      "undefined_clubs": [],
+      "below_min_clubs": ["Birmingham City", "Bolton Wanderers", "Bournemouth", "Brentford", "Brighton and Hove Albion", "Burnley", "Cardiff City", "Charlton Athletic", "Coventry City", "Derby County", "Hull City", "Ipswich Town", "Leeds United", "Luton Town", "Norwich City", "Nottingham Forest", "Portsmouth", "Queens Park Rangers", "Reading", "Sheffield Wednesday", "Stoke City", "Swansea City", "Watford", "Wigan Athletic", "Wimbledon", "Wolverhampton Wanderers"]
+    },
+    "sentence": null,
+    "interval": [-0.1318934, 0.27899436],
+    "n_club_seasons": 389,
+    "n_blocked": 224,
+    "plotted": ["Liverpool", "Everton", "Chelsea", "Aston Villa", "Manchester City", "Manchester United", "Arsenal", "Leicester City", "Southampton", "Tottenham Hotspur"],
+    "absent_clubs": ["Barnsley", "Blackpool", "Bradford City", "Huddersfield Town", "Sheffield United"]
+  }
+}

@@ -1,0 +1,442 @@
+"club","season_end","median_tenure","n_regulars","results_points"
+"Arsenal",1996,6,10,63
+"Arsenal",1997,7,11,68
+"Arsenal",1998,8,11,78
+"Arsenal",1999,6.5,11,78
+"Arsenal",2000,3.5,14,73
+"Arsenal",2001,4.5,12,70
+"Arsenal",2002,3,11,87
+"Arsenal",2003,3.5,11,78
+"Arsenal",2004,4,11,90
+"Arsenal",2005,5,11,83
+"Arsenal",2006,4.75,10,67
+"Arsenal",2013,4,13,73
+"Arsenal",2014,3.5,10,79
+"Arsenal",2015,3,8,75
+"Arsenal",2016,3,10,71
+"Arsenal",2017,3,10,75
+"Arsenal",2018,3,11,63
+"Arsenal",2019,2,12,70
+"Arsenal",2020,2.25,6,56
+"Arsenal",2026,3,1,85
+"Aston Villa",1996,1.5,11,63
+"Aston Villa",1999,3.75,12,55
+"Aston Villa",2001,2.5,11,54
+"Aston Villa",2002,3,9,50
+"Aston Villa",2003,4.25,10,45
+"Aston Villa",2004,3,13,56
+"Aston Villa",2005,4.25,10,47
+"Aston Villa",2006,2,11,42
+"Aston Villa",2007,4,7,50
+"Aston Villa",2008,2,11,60
+"Aston Villa",2009,1.5,9,62
+"Aston Villa",2010,2,11,64
+"Aston Villa",2011,3,9,48
+"Aston Villa",2012,3,9,38
+"Aston Villa",2013,1.25,10,41
+"Aston Villa",2014,2.5,11,38
+"Aston Villa",2015,3,12,38
+"Aston Villa",2020,1,11,35
+"Aston Villa",2021,2,10,55
+"Aston Villa",2024,3.25,12,68
+"Aston Villa",2025,3.5,11,66
+"Birmingham City",2008,2,9,35
+"Birmingham City",2010,1.5,11,50
+"Birmingham City",2011,2.25,10,39
+"Blackburn Rovers",1996,3.5,11,61
+"Blackburn Rovers",1997,4.5,11,42
+"Blackburn Rovers",1998,4.5,11,58
+"Blackburn Rovers",1999,2,6,35
+"Blackburn Rovers",2002,3,11,46
+"Blackburn Rovers",2003,2.25,12,60
+"Blackburn Rovers",2004,2.5,8,44
+"Blackburn Rovers",2005,2,8,42
+"Blackburn Rovers",2006,1.75,12,63
+"Blackburn Rovers",2007,2.75,8,52
+"Blackburn Rovers",2008,2.25,12,58
+"Blackburn Rovers",2009,2.75,8,41
+"Blackburn Rovers",2011,4,9,43
+"Blackpool",2011,2.25,10,39
+"Bolton Wanderers",1996,3,10,29
+"Bolton Wanderers",1998,2.5,12,40
+"Bolton Wanderers",2002,3.25,10,40
+"Bolton Wanderers",2003,2.5,12,44
+"Bolton Wanderers",2004,2.75,12,53
+"Bolton Wanderers",2006,3,10,56
+"Bolton Wanderers",2012,3,11,36
+"Bournemouth",2016,3.25,10,42
+"Bournemouth",2017,4,9,46
+"Bournemouth",2018,4,13,44
+"Bournemouth",2019,4,9,45
+"Bournemouth",2020,3.5,11,34
+"Bournemouth",2023,4,9,39
+"Brentford",2022,3,10,46
+"Brentford",2023,4,10,59
+"Brentford",2024,4.25,10,39
+"Brentford",2025,3,11,56
+"Brighton and Hove Albion",2019,2.5,9,36
+"Brighton and Hove Albion",2020,2,11,41
+"Brighton and Hove Albion",2021,2,10,41
+"Brighton and Hove Albion",2022,3,9,51
+"Brighton and Hove Albion",2023,3,11,62
+"Brighton and Hove Albion",2024,3,7,48
+"Brighton and Hove Albion",2025,2,11,61
+"Brighton and Hove Albion",2026,3,5,53
+"Burnley",2010,3,11,30
+"Burnley",2015,3,11,33
+"Burnley",2017,3.25,12,40
+"Burnley",2018,2,11,54
+"Burnley",2019,3,8,40
+"Burnley",2020,3.5,12,54
+"Burnley",2021,4.5,9,39
+"Burnley",2022,5.75,10,35
+"Burnley",2024,1.25,10,24
+"Cardiff City",2019,2.5,12,34
+"Charlton Athletic",1999,1.5,10,36
+"Charlton Athletic",2001,2.5,10,52
+"Charlton Athletic",2002,2.75,10,44
+"Charlton Athletic",2003,3.5,12,49
+"Charlton Athletic",2004,3.5,13,53
+"Charlton Athletic",2005,3.25,10,46
+"Charlton Athletic",2006,2.5,9,47
+"Charlton Athletic",2007,2.25,8,34
+"Chelsea",1997,1.5,11,59
+"Chelsea",1998,2.5,11,63
+"Chelsea",2002,2.25,10,64
+"Chelsea",2003,3,11,67
+"Chelsea",2004,3,9,79
+"Chelsea",2005,2,10,95
+"Chelsea",2006,2,12,91
+"Chelsea",2007,3,10,83
+"Chelsea",2008,3,12,85
+"Chelsea",2010,4,11,86
+"Chelsea",2011,5,11,71
+"Chelsea",2013,2.5,12,75
+"Chelsea",2014,4,9,82
+"Chelsea",2015,3,11,87
+"Chelsea",2016,3,13,50
+"Chelsea",2017,3,11,93
+"Chelsea",2018,4,13,70
+"Chelsea",2019,3,11,72
+"Chelsea",2020,2.5,10,66
+"Chelsea",2021,2,11,67
+"Chelsea",2022,3.5,10,74
+"Chelsea",2023,2.5,7,44
+"Chelsea",2025,2,9,69
+"Chelsea",2026,3.5,11,52
+"Coventry City",1996,1.5,12,38
+"Coventry City",2000,3.5,11,44
+"Coventry City",2001,3.75,12,34
+"Crystal Palace",2014,2,11,45
+"Crystal Palace",2015,3,11,48
+"Crystal Palace",2016,2.5,10,42
+"Crystal Palace",2017,3,11,41
+"Crystal Palace",2018,2,11,44
+"Crystal Palace",2019,2.5,10,49
+"Crystal Palace",2020,3.5,9,43
+"Crystal Palace",2021,4.5,11,44
+"Crystal Palace",2022,3.75,10,48
+"Crystal Palace",2023,3,12,45
+"Crystal Palace",2024,3,11,49
+"Crystal Palace",2025,3,11,53
+"Derby County",1997,1.5,11,46
+"Derby County",1998,2,11,55
+"Derby County",1999,2.5,11,52
+"Derby County",2000,2.25,8,38
+"Derby County",2001,3,11,42
+"Derby County",2002,2.5,9,30
+"Derby County",2008,1.5,7,11
+"Everton",1998,1.75,8,40
+"Everton",1999,1.5,9,43
+"Everton",2000,2,10,50
+"Everton",2001,2.5,8,42
+"Everton",2002,2,12,43
+"Everton",2003,2.5,11,59
+"Everton",2004,3,13,39
+"Everton",2005,3.5,11,61
+"Everton",2006,3,13,50
+"Everton",2009,3,11,63
+"Everton",2010,3,10,61
+"Everton",2011,4.5,10,54
+"Everton",2012,5.5,10,56
+"Everton",2013,4,11,63
+"Everton",2014,5,11,72
+"Everton",2015,3.25,10,47
+"Everton",2016,3.5,9,47
+"Everton",2017,5,9,61
+"Everton",2018,1.5,11,49
+"Everton",2020,3,10,49
+"Everton",2021,3,12,59
+"Everton",2022,3,11,39
+"Everton",2023,1.25,10,36
+"Everton",2025,3,8,48
+"Everton",2026,4,8,49
+"Fulham",2002,2,12,44
+"Fulham",2003,2.5,9,48
+"Fulham",2004,3.5,10,52
+"Fulham",2005,2.25,10,44
+"Fulham",2006,2.5,9,48
+"Fulham",2007,3.5,11,39
+"Fulham",2008,1,7,36
+"Fulham",2010,2.75,10,46
+"Fulham",2011,3.5,11,49
+"Fulham",2012,3,9,52
+"Fulham",2014,2,7,32
+"Fulham",2021,1,11,28
+"Fulham",2023,2.75,12,52
+"Fulham",2024,2,8,47
+"Fulham",2025,2,11,54
+"Fulham",2026,3,12,52
+"Hull City",2009,3,9,35
+"Hull City",2010,2,8,30
+"Ipswich Town",2001,2.5,12,66
+"Ipswich Town",2002,2.25,12,36
+"Ipswich Town",2025,1.25,8,22
+"Leeds United",1997,1.75,10,46
+"Leeds United",2000,4,11,69
+"Leeds United",2001,2.5,11,68
+"Leeds United",2002,3.5,11,66
+"Leeds United",2003,4.75,10,47
+"Leeds United",2004,4,9,33
+"Leeds United",2021,3.5,11,59
+"Leeds United",2022,3,11,38
+"Leeds United",2026,2,11,47
+"Leicester City",1997,1.5,12,47
+"Leicester City",1998,2,11,53
+"Leicester City",1999,2.5,10,49
+"Leicester City",2000,3,11,55
+"Leicester City",2001,2.5,9,48
+"Leicester City",2002,3.5,9,28
+"Leicester City",2004,1.75,8,33
+"Leicester City",2015,3,11,41
+"Leicester City",2016,2,11,81
+"Leicester City",2017,3.25,10,44
+"Leicester City",2018,4,10,47
+"Leicester City",2019,2.5,11,52
+"Leicester City",2020,2,11,62
+"Leicester City",2021,2.75,10,66
+"Leicester City",2022,3.75,10,52
+"Leicester City",2023,3.5,8,34
+"Liverpool",1996,4.5,11,71
+"Liverpool",1997,5,11,68
+"Liverpool",1998,5.5,11,65
+"Liverpool",1999,4,12,54
+"Liverpool",2000,2,10,67
+"Liverpool",2001,2,11,69
+"Liverpool",2002,3,10,80
+"Liverpool",2005,4,10,58
+"Liverpool",2006,3,11,82
+"Liverpool",2007,3,11,68
+"Liverpool",2008,4,10,76
+"Liverpool",2009,2.5,11,86
+"Liverpool",2010,3.75,10,63
+"Liverpool",2011,3.75,10,58
+"Liverpool",2012,1.5,11,52
+"Liverpool",2013,4.75,10,61
+"Liverpool",2014,3.5,11,84
+"Liverpool",2015,2.25,10,62
+"Liverpool",2016,2,12,60
+"Liverpool",2017,2.5,12,76
+"Liverpool",2018,2.5,10,75
+"Liverpool",2019,2.5,10,97
+"Liverpool",2020,4,11,99
+"Liverpool",2022,5,10,92
+"Liverpool",2023,6,7,67
+"Liverpool",2024,2.5,9,82
+"Liverpool",2026,3,11,60
+"Luton Town",2024,1,11,26
+"Manchester City",2001,3,9,34
+"Manchester City",2005,2.5,9,52
+"Manchester City",2007,5,6,42
+"Manchester City",2008,1.75,12,55
+"Manchester City",2009,2.25,10,50
+"Manchester City",2010,1.5,10,67
+"Manchester City",2011,2,12,71
+"Manchester City",2012,2.5,10,89
+"Manchester City",2013,3,11,78
+"Manchester City",2014,3.75,12,86
+"Manchester City",2015,4,12,79
+"Manchester City",2016,3,12,66
+"Manchester City",2017,3,12,78
+"Manchester City",2018,3,10,100
+"Manchester City",2020,3.5,11,81
+"Manchester City",2021,4,12,86
+"Manchester City",2023,5.5,14,89
+"Manchester City",2024,4,11,91
+"Manchester City",2025,3,11,71
+"Manchester City",2026,4,7,78
+"Manchester United",1996,4,13,82
+"Manchester United",1997,4.5,12,75
+"Manchester United",1998,6,12,77
+"Manchester United",1999,6.5,12,79
+"Manchester United",2000,6,13,91
+"Manchester United",2001,7.5,12,80
+"Manchester United",2002,6.75,12,77
+"Manchester United",2005,4,11,77
+"Manchester United",2007,3.5,10,89
+"Manchester United",2008,4,11,87
+"Manchester United",2010,4.75,10,85
+"Manchester United",2011,5.5,8,80
+"Manchester United",2012,5,10,89
+"Manchester United",2013,6,9,89
+"Manchester United",2014,6.5,8,64
+"Manchester United",2015,4,11,70
+"Manchester United",2016,2.5,9,66
+"Manchester United",2017,3,7,69
+"Manchester United",2018,5.75,10,81
+"Manchester United",2019,4,9,66
+"Manchester United",2020,3,10,66
+"Manchester United",2021,4,11,74
+"Manchester United",2022,3,10,58
+"Manchester United",2023,2,11,75
+"Manchester United",2024,2,9,60
+"Manchester United",2025,2.5,10,42
+"Manchester United",2026,5.25,6,71
+"Middlesbrough",1996,2,11,43
+"Middlesbrough",1997,3,9,42
+"Middlesbrough",1999,2,11,51
+"Middlesbrough",2000,2,11,52
+"Middlesbrough",2002,2,9,45
+"Middlesbrough",2004,2.25,8,48
+"Middlesbrough",2005,2.5,9,55
+"Middlesbrough",2008,2,11,42
+"Middlesbrough",2009,3,10,32
+"Middlesbrough",2017,1.25,12,28
+"Newcastle United",1996,2.5,11,78
+"Newcastle United",1997,3.25,12,68
+"Newcastle United",1998,2.5,9,44
+"Newcastle United",2001,3.75,8,51
+"Newcastle United",2006,2,10,58
+"Newcastle United",2007,2.5,12,43
+"Newcastle United",2009,2.5,12,34
+"Newcastle United",2015,2.5,10,39
+"Newcastle United",2016,2,11,37
+"Newcastle United",2018,2,9,44
+"Newcastle United",2019,3,10,45
+"Newcastle United",2020,2.25,8,44
+"Newcastle United",2021,3,9,45
+"Newcastle United",2022,4,7,49
+"Newcastle United",2023,2.5,11,71
+"Newcastle United",2024,2.5,9,60
+"Norwich City",2012,2,11,47
+"Norwich City",2022,1.5,11,22
+"Nottingham Forest",1996,4.75,12,58
+"Nottingham Forest",1999,2,9,30
+"Nottingham Forest",2023,1,9,38
+"Nottingham Forest",2025,2,11,65
+"Nottingham Forest",2026,3,9,44
+"Portsmouth",2007,1.5,12,54
+"Portsmouth",2008,1.25,10,57
+"Portsmouth",2009,2.5,7,41
+"Portsmouth",2010,1,9,28
+"Queens Park Rangers",1996,5.25,12,33
+"Queens Park Rangers",2012,2,9,37
+"Reading",2008,5.5,8,36
+"Reading",2013,2.5,7,28
+"Sheffield United",2021,3.75,10,23
+"Sheffield Wednesday",1996,2,10,40
+"Sheffield Wednesday",2000,2.5,9,31
+"Southampton",1996,4,11,38
+"Southampton",1997,1.5,12,41
+"Southampton",1998,1.75,12,48
+"Southampton",1999,2.75,10,41
+"Southampton",2002,3.75,12,45
+"Southampton",2003,2,12,52
+"Southampton",2004,2.5,11,47
+"Southampton",2005,3,9,32
+"Southampton",2013,1.25,14,41
+"Southampton",2014,2,11,56
+"Southampton",2015,1,11,60
+"Southampton",2016,2,11,63
+"Southampton",2017,2.75,10,46
+"Southampton",2018,3.5,11,36
+"Southampton",2021,3,11,43
+"Southampton",2022,2.75,10,40
+"Southampton",2025,1.5,8,12
+"Stoke City",2009,1.5,8,45
+"Stoke City",2010,2,12,47
+"Stoke City",2011,2,12,46
+"Stoke City",2012,3,10,45
+"Stoke City",2013,3,11,42
+"Stoke City",2014,3,11,50
+"Stoke City",2016,2.5,11,51
+"Stoke City",2017,2,9,44
+"Sunderland",1997,2.75,10,40
+"Sunderland",2000,2.75,10,58
+"Sunderland",2001,3.25,12,57
+"Sunderland",2002,4,11,40
+"Sunderland",2003,4.5,9,19
+"Sunderland",2006,1.25,10,15
+"Sunderland",2008,1,9,39
+"Sunderland",2009,1.75,10,36
+"Sunderland",2010,2,9,44
+"Sunderland",2012,1.5,13,45
+"Sunderland",2013,2,11,39
+"Sunderland",2015,3,11,38
+"Sunderland",2016,1.5,9,39
+"Swansea City",2012,2.5,10,47
+"Swansea City",2014,2.5,10,42
+"Swansea City",2017,2.5,9,41
+"Tottenham Hotspur",1996,3.5,12,61
+"Tottenham Hotspur",1997,4.5,10,46
+"Tottenham Hotspur",1998,3.75,8,44
+"Tottenham Hotspur",1999,4,9,47
+"Tottenham Hotspur",2000,3.25,12,53
+"Tottenham Hotspur",2004,4.5,7,45
+"Tottenham Hotspur",2005,1,11,52
+"Tottenham Hotspur",2008,3,9,46
+"Tottenham Hotspur",2009,2,11,51
+"Tottenham Hotspur",2010,2,11,70
+"Tottenham Hotspur",2011,3,9,62
+"Tottenham Hotspur",2012,2.25,10,69
+"Tottenham Hotspur",2013,3,10,72
+"Tottenham Hotspur",2014,2,11,69
+"Tottenham Hotspur",2015,2,11,64
+"Tottenham Hotspur",2016,4,11,70
+"Tottenham Hotspur",2026,3,9,41
+"Watford",2000,4,8,24
+"Watford",2016,1.5,11,45
+"Watford",2020,3.25,12,34
+"Watford",2022,3,9,23
+"West Bromwich Albion",2005,1,11,34
+"West Bromwich Albion",2006,2,9,30
+"West Bromwich Albion",2009,2,9,32
+"West Bromwich Albion",2011,2,11,47
+"West Bromwich Albion",2012,2.5,11,47
+"West Bromwich Albion",2013,2,12,49
+"West Bromwich Albion",2014,3,11,36
+"West Bromwich Albion",2015,2.75,10,44
+"West Bromwich Albion",2016,3.25,12,43
+"West Bromwich Albion",2017,2.5,11,45
+"West Bromwich Albion",2021,2,10,26
+"West Ham United",1996,1.5,9,51
+"West Ham United",1997,2.75,8,42
+"West Ham United",1998,1.5,8,56
+"West Ham United",1999,1.5,9,57
+"West Ham United",2000,2.25,10,55
+"West Ham United",2001,2.5,9,42
+"West Ham United",2002,2,11,53
+"West Ham United",2003,4.5,9,42
+"West Ham United",2006,2.5,8,55
+"West Ham United",2017,2,9,45
+"West Ham United",2018,3,8,42
+"West Ham United",2019,2,11,52
+"West Ham United",2020,2,10,39
+"West Ham United",2021,2.5,10,65
+"West Ham United",2022,2.5,11,56
+"West Ham United",2023,3.5,11,40
+"Wigan Athletic",2006,1.5,11,51
+"Wigan Athletic",2007,1,11,38
+"Wigan Athletic",2008,1.5,11,40
+"Wigan Athletic",2009,2,11,45
+"Wigan Athletic",2010,2.5,10,36
+"Wigan Athletic",2011,2,12,42
+"Wigan Athletic",2012,2.5,9,43
+"Wigan Athletic",2013,3,10,36
+"Wimbledon",1996,2.75,10,41
+"Wimbledon",1997,4.5,11,56
+"Wimbledon",1998,5,11,44
+"Wimbledon",1999,5.5,11,42
+"Wimbledon",2000,5.5,9,33
+"Wolverhampton Wanderers",2004,3,11,33
+"Wolverhampton Wanderers",2021,3,11,45

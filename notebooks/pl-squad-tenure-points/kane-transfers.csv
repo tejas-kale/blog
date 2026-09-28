@@ -1,0 +1,12 @@
+player_id,date,club_from,club_to,transfer_type
+kane,2009-07-01,Tottenham Yth.,Spurs U18,academy
+kane,2010-07-01,Spurs U18,Tottenham,senior
+kane,2011-01-07,Tottenham,Leyton Orient,loan
+kane,2011-05-31,Leyton Orient,Tottenham,end_loan
+kane,2012-01-01,Tottenham,Millwall,loan
+kane,2012-05-31,Millwall,Tottenham,end_loan
+kane,2012-08-31,Tottenham,Norwich,loan
+kane,2013-02-01,Norwich,Tottenham,end_loan
+kane,2013-02-21,Tottenham,Leicester,loan
+kane,2013-05-14,Leicester,Tottenham,end_loan
+kane,2023-08-12,Tottenham,Bayern Munich,permanent

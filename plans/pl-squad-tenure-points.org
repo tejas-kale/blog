@@ -1,0 +1,929 @@
+#+title: Premier League squad tenure and points
+
+* Status
+
+- Planning status :: ready
+- Delegation gate :: clear
+- Plan owner :: Tejas Kale
+
+The implementing agent records =git rev-parse HEAD= before its first implementation change. The working tree must be clean at that moment. This plan file is the agreed context.
+
+* Aim and intended use
+
+- Question :: Across Premier League club-seasons from 1995–96 through 2025–26, do clubs with a longer current senior-squad streak finish on more points?
+- Intended use :: A short public blog post, published whether the association is strong, weak, or absent.
+- Audience :: Readers of the blog who know a Premier League table and can read a correlation.
+- Population :: Club-seasons in the 31 completed 38-game Premier League seasons from 1995–96 through 2025–26.
+- Decision informed :: Which regular-player cut, if either, the post shows, and how the result is described.
+- This analysis cannot support :: A claim that time together causes points. Money, the manager, injuries, and the schedule remain mixed in with tenure.
+
+* Risk tier
+
+- Tier :: production-or-external
+- Reason :: The result is published. A reader can treat the chart as a finding about Premier League squads. The run keeps a saved copy of the retrieved tables, recomputes points from a second source, and checks one player's tenure by hand.
+
+* Data Understanding Record
+
+| Item | Settled meaning or value | Evidence |
+|------+--------------------------+----------|
+| Source and retrieval | R package =worldfootballR= installed from GitHub (=JaseZiv/worldfootballR=). FBref, through that package, supplies league starts, league appearances, and the league table. Transfermarkt, through =tm_squad_stats=, =tm_team_transfers=, and =tm_player_transfer_history=, supplies senior-squad lists and loan dates. football-data.co.uk season match files supply the independent points total. Each retrieved table is saved with the analysis. | Package docs: https://worldfootballr.sportsdataverse.org/articles/extract-transfermarkt-data.html . FBref 1995–96 player tables include starts: https://fbref.com/en/comps/9/1995-1996/1995-1996-Premier-League-Stats . Python =soccerdata= reads FBref and match files and does not read Transfermarkt. |
+| Population and unit of observation | One row per club-season after the player median is taken. Input grain is one row per player per club per season. | Agreed in the grilling session. |
+| Grain, keys, and cardinality | Analysis key: club + season. Player key inside a club-season: resolved person id. About 20 clubs times 31 seasons before exclusions. A club needs 10 Premier League seasons in the window before its correlation enters the summary. | 1995–96 was the first 20-club, 38-game season (https://www.premierleague.com/en/news/693495). 2025–26 finished on 24 May 2026 (https://www.premierleague.com/en/news/4171848). |
+| Fields and metrics | League starts. League appearances. Senior-squad membership in any division, including a season with no appearances. Loan dates and loan type. Match results, scored as 3 for a win and 1 for a draw. Median tenure of regulars. Within-club Pearson correlation. | Field roles agreed in the grilling session. Transfermarkt squad appearance totals mix competitions, so the regular cut uses the FBref league table only. |
+| Time semantics and window | A season is an English football season, labelled by its two years. Dates are the competition's own dates. No timezone conversion. The window is 1995–96 through 2025–26 inclusive. The 2026–27 season is in progress and stays out. | Same sources as the cardinality row. |
+| Nulls, sentinels, duplicates, and late data | An unresolved player is missing from that club-season median and is counted as unresolved. A missing squad list or missing loan date stops the run. Duplicate name matches are ambiguous until the org resolution table says otherwise. Tables are final tables for completed seasons. | Agreed stop rule. |
+| Filters, exclusions, and join loss | Regulars are two separate cuts: at least 20 league starts, or at least 20 league appearances, out of 38. Exact matches on normalized name, club, and season enter. Ambiguous and unmatched players stay out until the org resolution table assigns them. A club-season with any unresolved regular is flagged and stays out of the correlation until it is resolved. Clubs with fewer than 10 seasons, and clubs whose median tenure does not vary, stay out of the median and are named. | Threshold is more than half of 38, which is 20. |
+| Freshness, coverage, and bias | Retrieval happens at implementation time and is saved. Coverage is the published FBref and Transfermarkt pages for these seasons. Squad lists and loan dates for the 1990s can be thin. The run stops rather than invent a tenure. Scraped pages are analysis inputs. They are not copied into =static/= and are not republished as a dataset. | Terms of each site are checked before a raw snapshot is committed to the public repo. |
+| Reconciliation or plausibility check | Results points for every club-season match a total built from the football-data.co.uk match file. The hand-worked tenure of one player matches the code. | Acceptance rules are in the Verification Contract. |
+
+Internet retrieval, recorded at implementation:
+
+- Canonical pages :: FBref competition pages for each season; Transfermarkt club season URLs passed to =worldfootballR=; football-data.co.uk England Premier League match files, one file per season.
+- Retrieval time :: The time the implementing agent saves the tables.
+- Parameters :: Seasons whose end year runs from 1996 through 2026. League is the Premier League for starts, appearances, and points. Senior-squad and loan lookups follow each regular into other divisions and other clubs.
+- Pagination :: Package calls over club-season URLs. The agent pauses between page loads and saves each response.
+- Revision :: The saved files are the revision. The post cites the retrieval date.
+- Licence :: football-data.co.uk, FBref, and Transfermarkt terms are read at retrieval. Raw vendor tables stay out of the published site until those terms allow the snapshot to sit in the public repo.
+- Known limits :: =worldfootballR= on CRAN lags the GitHub copy. FBref league tables in that package can require a live browser fetch and can fail under load. The saved snapshot is what later runs read.
+
+* Method and assumptions
+
+- Method class :: descriptive
+- Method :: For each club-season, take the regulars under one cut and compute the median of their current senior-squad tenure. For each club, compute the Pearson correlation between that median and results points across its seasons in the window. The lead number is the median of those club correlations. A 10% trimmed mean of the same correlations is computed beside it. Spearman is reported as a point value and is not bootstrapped.
+- Assumptions :: A season in the senior squad counts as shared time with that club's group, including a season with no appearances and a season outside the Premier League. A full season on loan breaks that shared time. Results points measure the season's on-pitch outcome. The clubs in the window are the whole population, so the bootstrap redraws seasons inside each club.
+- Limits :: The association is descriptive. Two regular cuts are both computed. The post shows starts, appearances, or both only after Tejas chooses. The agent does not choose the chart.
+
+Tenure rules the code must implement:
+
+- A season adds 1 when the player was in that club's senior squad, in any division, including a season with zero appearances.
+- Years only in the academy add nothing and leave the streak unchanged.
+- A full season on loan means the player is absent from the parent senior squad for that whole season. The parent gets 0. The earlier run is wiped. A later return starts at 1.
+- A mid-season loan means the player is in the parent senior squad and in another club's senior squad in the same season. Each of those clubs gets 0.5. The parent streak stays in place. The next full season at the parent adds 1 on top of the 0.5.
+- A mid-season permanent move adds 0.5 at the club they left and 0.5 at the club they joined. The streak at the club they left ends. A later return there starts at 1.
+- If one season lists two loan clubs, the parent gets 0.5 once and each loan club gets 0.5.
+- The same tenure is used for both regular cuts. The cuts differ only in who enters the median.
+
+Uncertainty:
+
+- 2000 replicates, seed 2026.
+- Each replicate redraws a club's seasons with replacement and keeps that season's tenure and points together.
+- It recomputes each club correlation, then the median across clubs.
+- The 95% interval is the 2.5th and 97.5th percentiles.
+- A replicate that makes a club's tenure constant leaves that club out of that replicate's median.
+- Each plotted club's interval is the percentiles of its own recomputed correlation.
+
+Summary rule:
+
+- The post leads with the median of defined club correlations.
+- Clubs with undefined correlations are excluded from the median and from the trimmed mean, and they are named.
+- The trimmed mean drops the lowest 10% and the highest 10% of defined correlations, then takes the mean. It lives in the notebook.
+- When undefined clubs are more than 20% of clubs with at least 10 seasons, the opening paragraph of the post states that share.
+
+* Decision Ledger
+
+| Decision | Reason | Alternatives rejected | Consequence |
+|----------+--------+-----------------------+-------------|
+| Describe the association | The blog can show whether tenure and points move together | A causal claim about time together | The post states the limit in the Aim section |
+| Results points only | On-pitch outcomes are wins and draws | Official table points; goals scored | Deductions appear in a note, not in the plotted total |
+| 38-game seasons only | Raw points then share one scale, and the window is already 31 seasons | Points per game across 42-game seasons | 1992–93 through 1994–95 stay out |
+| Within-club correlations | The question is whether a club's own settled seasons coincide with its own points | One pooled cloud of every club-season | Rich settled clubs do not set the single slope |
+| Median tenure of regulars | Agreed exposure | Pairwise shared seasons | Pairwise overlap is out of this post |
+| Senior-squad streak, with the loan and move rules above | Tenure should follow time at the club, and a full loan breaks it | Cumulative Premier League appearances only; academy years | Tenure can rise during a Championship season |
+| Both regular cuts computed, chart chosen later | Starts and appearances can disagree | Publishing both, or one, before seeing them | Tejas judges the post after both results exist |
+| Median is always the lead number | The median already resists edge clubs. Undefined clubs are already removed from both summaries | Switching the lead number to a trimmed mean when the drop rate passes 20% or 40% | A drop rate above 20% changes the opening sentence, not the statistic |
+| R and =worldfootballR= | One maintained package reads FBref and Transfermarkt | Python =soccerdata=, which does not read Transfermarkt | The CRAN package is not the install |
+| Org tables resolve identity | Automatic name matching will be wrong in places Tejas can see | Letting the agent pick among ambiguous ids | Unresolved club-seasons stay out of the correlation |
+| Bootstrap seasons inside clubs | These clubs are the population | Resampling clubs as if they were a sample | The interval is season-to-season uncertainty |
+
+* Verification Contract
+
+| Claim | Evidence | Acceptance rule | Independence | Human action |
+|-------+----------+-----------------+--------------+--------------|
+| Results points equal 3 per win and 1 per draw | Club-season totals from the analysis and from the football-data.co.uk match file | Every club-season matches, or the gap equals a named deduction | The match file is a second source, not the FBref table | Tejas reads the deduction note against the seasons listed below |
+| Named deductions are the only gaps | Published deduction records | Middlesbrough 1996–97 is −3. Portsmouth 2009–10 is −9. Everton 2023–24 is the deduction that stood after appeal. Nottingham Forest 2023–24 is −4. Any other gap fails the check | Records are league and news statements, not the match file | Tejas confirms the Everton total that stood, because a second deduction was appealed |
+| One player's tenure matches Transfermarkt | A hand-worked season-by-season streak saved beside the code | The code reproduces every season in that sheet, including loans, Championship seasons, unused seasons, and mid-season 0.5 seasons | The sheet is written from the Transfermarkt pages, not from the code output | Tejas checks the sheet against the pages |
+| Regulars are at least 20 starts or 20 appearances | A tiny fixture of counts 19, 20, and 21 | 19 is out. 20 and 21 are in. The two cuts are separate | The fixture is hand-written | Tejas reviews the fixture once |
+| The median and the interval follow the Decision Ledger | A second R script recomputes the median, the trimmed mean, and one bootstrap percentile from the saved club-season table | The lead numbers match the notebook | The script does not call the notebook's correlation function | Tejas compares the two outputs |
+| Unresolved players do not enter a median | The flag list and the org resolution table | A club-season with an unresolved regular is absent from the correlation input. After the org table resolves it, the row can enter | The flag is a count of resolution-table misses, not a reread of the matcher | Tejas fills the org table |
+
+Known deduction sources: Middlesbrough and Portsmouth are documented by the BBC (https://www.bbc.com/sport/football/67448714) and The Guardian (https://www.theguardian.com/football/2023/nov/20/everton-docked-points-sunderland-manchester-united-arsenal-middlesbrough-portsmouth). Everton's 10-point deduction reduced on appeal to 6, and a further immediate 2-point deduction was announced in April 2024 (https://www.bbc.com/sport/football/67448714, https://www.premierleague.com/en/news/3960088). Forest's 4-point deduction was upheld (https://www.bbc.com/sport/football/articles/cd13r56z21xo).
+
+* Human review boundary
+
+** Claim-critical logic
+
+- The tenure streak, including full-season loans, mid-season 0.5 seasons, Championship seasons, and unused senior seasons.
+- The regular cut at 20 starts and at 20 appearances.
+- The player match and the reading of the org resolution table.
+- Results points, and the comparison with the match file.
+- The within-club Pearson correlation, the median, the trimmed mean, the undefined-club share, and the bootstrap.
+- The plotted points, the season axis, and the sentence that states the undefined share.
+
+** Human-review-critical logic
+
+- Tenure rules. A wrong loan wipe or a wrong 0.5 still produces a plausible median.
+- The org resolution table and any club-season that was flagged. A wrong id still produces a plausible streak.
+- The hand-worked player sheet.
+- The deduction note.
+- Which regular cut the post shows.
+- The chart and the opening paragraph. Axis choice, the 20% sentence, and which cut is drawn can change the reading while looking finished.
+
+These blocks live in this org file as source blocks when they are implemented. The tangled R is generated from those blocks.
+
+** Logic excluded from human review
+
+- Saving a retrieved table to disk, once the verification contract has accepted the points total and the tenure sheet.
+- Plot theme and file export that do not change the data, the axis variable, or the quoted correlation.
+- Package install and the pause between page loads.
+
+Plausible failure of the export :: a plot file is written from a stale table. Oracle :: the export test reads the same saved club-season file the verification script uses and checks the plotted correlation against that file. Fault probe :: change one club's correlation in a fixture and expect the test to fail. The verification command runs that test.
+
+* Review Map
+
+| Question | Org heading or block | Evidence or test | Expected invariant | Consequence if wrong |
+|----------+----------------------+------------------+--------------------+----------------------|
+| Are these the 31 seasons, and are points results points? | Data Understanding Record | Match-file reconciliation | 380 matches per season; points gaps equal named deductions only | A season is mis-scaled or a deduction is plotted as form |
+| Who is a regular under each cut? | Method, regular fixture | Counts 19, 20, 21 | 20 is the minimum | The median describes a different group of players |
+| Does tenure follow the streak rules? | Method, tenure rules | Hand-worked player sheet | Code matches every worked season | The exposure is a different quantity from the one agreed |
+| Did ambiguous players stay out until the org table resolved them? | Verification Contract | Flag list | Unresolved club-seasons are absent from the correlation input | A wrong person contributes years |
+| Is the lead number the median of defined within-club correlations? | Method, second R script | Notebook output and second script | The two medians match, and undefined clubs are named | The post quotes a different summary |
+| Does the interval redraw seasons inside clubs? | Method, uncertainty | Bootstrap settings and one percentile check | Seed 2026, 2000 replicates, pair kept together | The shaded range answers a different question |
+| Does the opening paragraph state the undefined share when it exceeds 20%? | Summary rule | Count of undefined clubs over clubs with at least 10 seasons | The sentence appears only above that share, and the lead number stays the median | Readers either miss a large omission or think the statistic changed |
+| Which cut does the post show? | Aim, decision informed | Tejas's note in this file after both results exist | The agent does not choose | The published chart is the cut Tejas did not want |
+
+* Reproducible execution
+
+- Environment and dependencies :: R. =worldfootballR= from GitHub (=remotes::install_github("JaseZiv/worldfootballR")=). The CRAN build is not sufficient. Other R packages are declared in the implementation's dependency file when they are used.
+- Tangle and run :: Human-review-critical R lives in source blocks in this file and tangles to =notebooks/pl-squad-tenure-points/=. Tangle command: =emacs --batch --eval "(require 'ob-tangle)" --eval "(org-babel-tangle-file \"plans/pl-squad-tenure-points.org\")"=. The blog post, when written, is =content/posts/pl-squad-tenure-points.md=. Charts served by the site go under =static/pl-squad-tenure-points/=. Raw vendor tables do not.
+- Parameters and date ranges :: Season end years 1996 through 2026. Regular threshold 20 of 38. Minimum seasons per club 10. Trim 10% each tail. Undefined-share sentence at more than 20%.
+- Randomness :: Bootstrap seed 2026, 2000 replicates. The seed is the only randomness.
+- Generated artefacts :: Saved retrieval tables; the org resolution table; the hand-worked tenure sheet; the club-season analysis table; the correlation table for both cuts; the bootstrap intervals; the ten club plots; the tangled R files.
+- Verification command :: =R_LIBS=/tmp/r-lib Rscript notebooks/pl-squad-tenure-points/verify.R=
+
+Org resolution table, which Tejas edits and the code only reads:
+
+- Columns :: season, club, source name, FBref id, Transfermarkt id, resolution (=match= or =exclude=), note.
+- Authority :: a filled row overrides the automatic matcher. The code does not rewrite this table.
+- Staging :: the agent may write a separate list of ambiguous rows. Tejas copies the ones he decides into the authority table.
+
+* Return Contract
+
+** Required from the implementing agent
+
+- Implemented outcome.
+- Data version or retrieval evidence.
+- Checks run and their results.
+- Unresolved or changed assumptions.
+- Completed Review Map.
+- Human-review-critical Org block locations.
+- Generated artefacts and drift check.
+- Claims the agent cannot verify for the user.
+- Git review baseline and final commit SHA.
+
+** Implementation results
+
+*** Implemented outcome
+
+Both regular cuts are computed for season end years 1996 through 2026. The lead number is the median of defined within-club Pearson correlations of median regular tenure and results points.
+
+- Starts :: median 0.03459493. Trimmed mean 0.07644703. Spearman point 0.07378996. Bootstrap interval −0.09268158 to 0.2442986. 18 clubs. 441 club-seasons kept. 172 blocked. Undefined share 0.
+- Appearances :: median 0.01653427. Trimmed mean 0.09674175. Spearman point 0.0480312. Bootstrap interval −0.1318934 to 0.27899436. 18 clubs. 389 club-seasons kept. 224 blocked. Undefined share 0.
+
+The undefined-share sentence is absent, because the share is 0. The draft post reports both medians and does not choose a chart. The ten plots for each cut are the defined clubs with the most kept seasons, ties broken by club name, under =notebooks/pl-squad-tenure-points/out/plots/=. They are not copied to =static/=.
+
+*** Data version and retrieval evidence
+
+Retrieved on 2026-09-23. Match files are football-data.co.uk E0 CSVs, codes 9596 through 2526, 380 matches in each season. FBref league tables and player tables are Wayback captures of the same competition URLs. Live FBref returned HTTP 403 to curl and a Cloudflare "Just a moment" page to headless Chrome; that fetch was retried and then replaced by the archive. =worldfootballR= 0.6.8.0001 is installed from GitHub. Transfermarkt squads are the kader HTML pages. Transfer histories are =ceapi/transferHistory/list/{id}= JSON, the endpoint =worldfootballR= calls. 2,458 matched regulars have a saved history.
+
+Terms, decided before any raw file was added to the public repo: the football-data homepage says "All Rights Reserved" and also offers the CSVs for analysis. FBref, Sports Reference, and Transfermarkt pages are not republished. Raw HTML, CSV, and JSON stay gitignored under =notebooks/pl-squad-tenure-points/raw/=. Derived aggregates in =out/= are committed. Tejas still owns that terms decision.
+
+Eight transfer rows had a date that does not parse (=2008-00-01=, =2018-00-01=, =2004-00-01=, =1998-00-01=, and four =0000-00-00=). They are listed in =out/unparsed-transfer-dates.csv= and were not given an invented date. Later rows for the same player still use their own dates.
+
+Transfermarkt writes Manchester United as "Man Utd", Sheffield United as "Sheff Utd", and Sheffield Wednesday as "Sheff Wed". Those spellings are in the club map. A four-row truncation, "Charlton Athleti", is mapped to Charlton Athletic.
+
+*** Checks and results
+
+=R_LIBS=/tmp/r-lib Rscript notebooks/pl-squad-tenure-points/verify.R= exited 0. The six seam tests passed. The second script matched the median, the trimmed mean, the Spearman point, and the 97.5th bootstrap percentile on both saved club-season files. Points reconciliation has 31 seasons, 38 matches for every club, and four gaps: Middlesbrough 1997 is −3, Portsmouth 2010 is −9, Everton 2024 is −8 (official 40, results 48), Nottingham Forest 2024 is −4.
+
+*** Unresolved or changed assumptions
+
+The org resolution table is still the empty header. 251 unmatched regulars and 2 ambiguous regulars are in =out/ambiguous-players.csv=. A club-season that contains one of them stays out of the correlation. On the starts cut, Barnsley, Bradford City, and Huddersfield Town have no kept season. On the appearances cut, Barnsley, Blackpool, Bradford City, Huddersfield Town, and Sheffield United have no kept season. Clubs under 10 kept seasons are named in =out/summary.json=.
+
+The campaign window in the code is 1 September through 31 May. A loan that becomes a permanent stay at the same club counts as one season there. Two loan clubs and no senior days give the parent 0.5 once and each loan club 0.5. Any other mix of a loan and a senior club in one campaign counts 0.5 at each club in the stretch. An end of loan into a youth team is an academy return. The empty org table uses the columns season, club, source name, FBref id, Transfermarkt id, resolution, and note. Everton's −8 is the gap in the two tables; Tejas still confirms that this is the deduction that stood after appeal.
+
+*** Completed Review Map
+
+- 31 seasons, results points :: 380 matches per season. The only gaps are the four named deductions.
+- Regular cut :: the 19, 20, 21 fixture passes for starts and for appearances.
+- Tenure :: the Harry Kane sheet matches, including loans, Championship seasons, the unused season, and mid-season 0.5 seasons. The full-season loan wipe and the mid-season permanent return also match.
+- Ambiguous players :: unresolved regulars block the club-season. The org table can put a row back. It is empty.
+- Lead number :: the second script matches the notebook on both cuts.
+- Interval :: seed 2026, 2000 replicates, tenure and points redrawn together. The 97.5th percentile matches.
+- Undefined share :: 0, so the sentence is absent and the lead number stays the median.
+- Which cut the post shows :: the draft states both results. Tejas chooses the chart.
+
+*** Human-review-critical Org block locations
+
+The six source blocks under =* Tangled source= in this file: =regulars.R=, =tenure.R=, =points.R=, =correlation.R=, =resolution.R=, =plotting.R=. =build.R=, =retrieve.py=, =second-correlation.R=, =verify.R=, and the tests are adapters and checks. They are not tangled.
+
+*** Generated artefacts and drift check
+
+=emacs --batch= tangled the six blocks after the source edits. The tangled files match those blocks. =second-correlation.R= does not source =correlation.R=.
+
+Committed derived files: =org-resolution.csv=, =hand-worked-tenure.csv=, =kane-transfers.csv=, =out/points-reconciliation.csv=, =out/ambiguous-players.csv=, =out/unparsed-transfer-dates.csv=, =out/club-seasons-starts.csv=, =out/club-seasons-appearances.csv=, =out/correlations-starts.csv=, =out/correlations-appearances.csv=, =out/bootstrap-starts.csv=, =out/bootstrap-appearances.csv=, =out/club-intervals-starts.csv=, =out/club-intervals-appearances.csv=, =out/summary.json=, and the twenty SVG plots. Raw vendor files are not committed.
+
+*** Claims the agent cannot verify
+
+Tejas confirms the Everton deduction that stood. Tejas checks the Kane sheet against the Transfermarkt pages. Tejas fills the org resolution table. Tejas chooses the regular cut the chart shows. Tejas owns the decision to keep raw snapshots out of the repo.
+
+*** Git review baseline and final commit SHA
+
+Review baseline, recorded on the clean tree before implementation: =30fa0e55b407bd9a78d60f6e073ea560274ac965=. The results in this section were committed as =f21a1edbe1548790a1df52d4151598f4a2cd09c4= on =cursor/pl-squad-tenure-plan-6e5c=.
+
+* Unknowns and out of scope
+
+** Blocking unknowns
+
+None.
+
+** Bounded unknowns
+
+- Everton's 2023–24 deduction after the appeal of the second penalty. Bound :: the points check fails unless the gap equals the deduction that stood. Risk :: the note quotes 8 points when the appeal changed it. Check :: the Verification Contract deduction row. Owner :: Tejas.
+- Completeness of 1990s Transfermarkt squad lists and loan dates. Bound :: a missing list or a missing date stops the run. Risk :: the window shortens or a club-season is dropped. Check :: the stop report names the page. Owner :: the implementing agent reports it; Tejas decides whether to narrow the window.
+- Site terms for committing raw snapshots. Bound :: raw vendor tables stay out of =static/= and out of the public repo until the terms are read. Risk :: a commit redistributes a scrape. Check :: the retrieval note records the terms decision before any raw file is added. Owner :: Tejas.
+- =worldfootballR= FBref fetches that need a live browser. Bound :: a failed fetch is retried and then stopped. Risk :: the snapshot is incomplete. Check :: every season in the window has a saved player table before correlations are computed. Owner :: the implementing agent.
+
+** Deferred choices and out of scope
+
+- Pairwise shared seasons.
+- Minutes as the regular cut.
+- Goals scored, goal difference, and league position.
+- Seasons before 1995–96 and the in-progress 2026–27 season.
+- Choosing which regular cut the post shows. That choice waits until both results exist.
+- A causal model, a club fixed-effect regression beyond the within-club correlation, and any claim about chemistry.
+
+* Tangled source
+
+Human-review-critical R. Tangle regenerates the files under notebooks/pl-squad-tenure-points/.
+
+#+begin_src R :tangle ../notebooks/pl-squad-tenure-points/regulars.R
+regular_threshold <- function() 20L
+
+regulars_for_cut <- function(player_seasons, cut) {
+  if (!cut %in% c("starts", "appearances")) {
+    stop("cut must be starts or appearances")
+  }
+  count <- player_seasons[[cut]]
+  keep <- !is.na(count) & count >= regular_threshold()
+  player_seasons[keep, , drop = FALSE]
+}
+
+club_season_median_tenure <- function(regulars) {
+  if (nrow(regulars) == 0) {
+    return(data.frame(
+      club = character(),
+      season_end = integer(),
+      median_tenure = numeric(),
+      n_regulars = integer(),
+      stringsAsFactors = FALSE
+    ))
+  }
+  keys <- paste(regulars$club, regulars$season_end, sep = "\r")
+  split_rows <- split(regulars, keys)
+  rows <- lapply(split_rows, function(d) {
+    data.frame(
+      club = d$club[[1]],
+      season_end = d$season_end[[1]],
+      median_tenure = median(d$tenure),
+      n_regulars = nrow(d),
+      stringsAsFactors = FALSE
+    )
+  })
+  out <- do.call(rbind, rows)
+  rownames(out) <- NULL
+  out[order(out$club, out$season_end), , drop = FALSE]
+}
+#+end_src
+
+#+begin_src R :tangle ../notebooks/pl-squad-tenure-points/tenure.R
+# A campaign is 1 September through 31 May. A player who is at one senior
+# club for that whole stretch adds 1. A loan that covers that whole stretch
+# is a full-season loan: the parent records 0 and the streak is wiped, and
+# the loan club adds 1. Any other split of the stretch is a mid-season
+# 0.5. A permanent move before 1 September gives the new club the season.
+# A later return after a permanent move or a full-season loan starts at 1.
+
+campaign_start <- function(season_end) {
+  as.Date(sprintf("%d-09-01", season_end - 1L))
+}
+
+campaign_end <- function(season_end) {
+  as.Date(sprintf("%d-05-31", season_end))
+}
+
+# June, July, and August belong to the season that is about to be played.
+season_holding_move <- function(date) {
+  date <- as.Date(date)
+  year <- as.integer(format(date, "%Y"))
+  month <- as.integer(format(date, "%m"))
+  if (month >= 6L) year + 1L else year
+}
+
+involvement_from_transfers <- function(transfers, through_season_end) {
+  transfers$date <- as.Date(transfers$date)
+  transfers$player_id <- as.character(transfers$player_id)
+  empty <- data.frame(
+    player_id = character(),
+    season_end = integer(),
+    club = character(),
+    involvement = character(),
+    stringsAsFactors = FALSE
+  )
+  if (nrow(transfers) == 0) return(empty)
+
+  pieces <- lapply(split(transfers, transfers$player_id), function(events) {
+    events <- events[order(events$date, seq_len(nrow(events))), , drop = FALSE]
+    changes <- data.frame(
+      date = as.Date(character()),
+      club = character(),
+      kind = character(),
+      parent = character(),
+      stringsAsFactors = FALSE
+    )
+    club <- NA_character_
+    kind <- NA_character_
+    parent <- NA_character_
+    for (i in seq_len(nrow(events))) {
+      type <- events$transfer_type[[i]]
+      from <- events$club_from[[i]]
+      to <- events$club_to[[i]]
+      if (type == "academy") {
+        club <- to
+        kind <- "academy"
+        parent <- NA_character_
+      } else if (type == "senior" || type == "permanent") {
+        club <- to
+        kind <- "senior"
+        parent <- NA_character_
+      } else if (type == "loan") {
+        parent <- from
+        club <- to
+        kind <- "loan"
+      } else if (type == "end_loan") {
+        club <- to
+        youth_dest <- grepl("youth|yth|\\bu1[6-9]\\b|\\bu2[1-3]\\b", to, ignore.case = TRUE, perl = TRUE)
+        kind <- if (isTRUE(youth_dest)) "academy" else "senior"
+        parent <- NA_character_
+      } else {
+        stop("Unknown transfer_type: ", type)
+      }
+      changes <- rbind(changes, data.frame(
+        date = events$date[[i]],
+        club = club,
+        kind = kind,
+        parent = if (is.na(parent)) "" else parent,
+        stringsAsFactors = FALSE
+      ))
+    }
+
+    first_date <- min(events$date)
+    first_season <- season_holding_move(first_date)
+    rows <- empty
+    for (season_end in seq.int(first_season, through_season_end)) {
+      days <- seq(campaign_start(season_end), campaign_end(season_end), by = "day")
+      idx <- findInterval(as.numeric(days), as.numeric(changes$date))
+      active <- changes[idx[idx > 0], , drop = FALSE]
+      if (nrow(active) == 0) next
+      senior_or_loan <- active[active$kind %in% c("senior", "loan"), , drop = FALSE]
+      if (nrow(senior_or_loan) == 0) {
+        academy <- active[active$kind == "academy", , drop = FALSE]
+        if (nrow(academy) > 0) {
+          rows <- rbind(rows, data.frame(
+            player_id = events$player_id[[1]],
+            season_end = season_end,
+            club = academy$club[[1]],
+            involvement = "academy",
+            stringsAsFactors = FALSE
+          ))
+        }
+        next
+      }
+
+      clubs <- unique(senior_or_loan$club)
+      loan_clubs <- unique(senior_or_loan$club[senior_or_loan$kind == "loan"])
+      senior_clubs <- unique(senior_or_loan$club[senior_or_loan$kind == "senior"])
+      parents <- unique(senior_or_loan$parent[senior_or_loan$kind == "loan" & senior_or_loan$parent != ""])
+
+      add <- function(club_name, involvement) {
+        data.frame(
+          player_id = events$player_id[[1]],
+          season_end = season_end,
+          club = club_name,
+          involvement = involvement,
+          stringsAsFactors = FALSE
+        )
+      }
+
+      if (length(clubs) == 1 && length(loan_clubs) == 1 && length(senior_clubs) == 0) {
+        rows <- rbind(
+          rows,
+          add(parents[[1]], "full_loan_out"),
+          add(loan_clubs[[1]], "full_loan_in")
+        )
+      } else if (length(loan_clubs) == 0 && length(senior_clubs) == 1) {
+        rows <- rbind(rows, add(senior_clubs[[1]], "senior"))
+      } else if (length(loan_clubs) >= 1 && length(intersect(parents, senior_clubs)) >= 1) {
+        parent <- intersect(parents, senior_clubs)[[1]]
+        rows <- rbind(rows, add(parent, "mid_loan_parent"))
+        for (loan_club in loan_clubs) {
+          rows <- rbind(rows, add(loan_club, "mid_loan_in"))
+        }
+      } else if (length(loan_clubs) == 0 && length(senior_clubs) >= 2) {
+        start_idx <- idx[idx > 0][[1]]
+        end_idx <- idx[idx > 0][[length(idx[idx > 0])]]
+        start_club <- changes$club[[start_idx]]
+        rows <- rbind(rows, add(start_club, "mid_move_out"))
+        for (other in setdiff(senior_clubs, start_club)) {
+          rows <- rbind(rows, add(other, "mid_move_in"))
+        }
+      } else if (length(loan_clubs) >= 1 && length(senior_clubs) == 0) {
+        # Two loan clubs in one season: the parent gets 0.5 once, and each loan club gets 0.5.
+        for (parent in unique(parents)) {
+          rows <- rbind(rows, add(parent, "mid_loan_parent"))
+        }
+        for (loan_club in loan_clubs) {
+          rows <- rbind(rows, add(loan_club, "mid_loan_in"))
+        }
+      } else if (length(clubs) == 1) {
+        # The same club occupies every campaign day, partly on loan and partly as senior.
+        rows <- rbind(rows, add(clubs[[1]], "senior"))
+        for (parent in setdiff(parents, clubs[[1]])) {
+          rows <- rbind(rows, add(parent, "full_loan_out"))
+        }
+      } else {
+        # Any other split of the campaign is 0.5 at each club in the stretch.
+        start_idx <- idx[idx > 0][[1]]
+        start_club <- changes$club[[start_idx]]
+        if (start_club %in% senior_clubs) {
+          rows <- rbind(rows, add(start_club, "mid_move_out"))
+        } else if (start_club %in% loan_clubs) {
+          rows <- rbind(rows, add(start_club, "mid_loan_in"))
+        }
+        for (loan_club in setdiff(loan_clubs, start_club)) {
+          rows <- rbind(rows, add(loan_club, "mid_loan_in"))
+        }
+        for (senior_club in setdiff(senior_clubs, start_club)) {
+          rows <- rbind(rows, add(senior_club, "mid_move_in"))
+        }
+        for (parent in setdiff(parents, c(senior_clubs, loan_clubs))) {
+          rows <- rbind(rows, add(parent, "mid_move_out"))
+        }
+      }
+    }
+
+    permanent <- events[events$transfer_type == "permanent", , drop = FALSE]
+    for (i in seq_len(nrow(permanent))) {
+      season_end <- season_holding_move(permanent$date[[i]])
+      if (season_end > through_season_end) next
+      left <- permanent$club_from[[i]]
+      already <- rows$player_id == events$player_id[[1]] &
+        rows$season_end == season_end &
+        rows$club == left
+      if (!any(already)) {
+        rows <- rbind(rows, data.frame(
+          player_id = events$player_id[[1]],
+          season_end = season_end,
+          club = left,
+          involvement = "spell_end",
+          stringsAsFactors = FALSE
+        ))
+      }
+    }
+    rows
+  })
+  out <- do.call(rbind, pieces)
+  rownames(out) <- NULL
+  out
+}
+
+senior_squad_tenure <- function(spells) {
+  spells$tenure <- NA_real_
+  if (nrow(spells) == 0) return(spells)
+  spells$player_id <- as.character(spells$player_id)
+  spells$row_id <- seq_len(nrow(spells))
+  for (player in unique(spells$player_id)) {
+    idx <- which(spells$player_id == player)
+    order_idx <- idx[order(spells$season_end[idx], spells$row_id[idx])]
+    state <- list()
+    for (i in order_idx) {
+      club <- spells$club[[i]]
+      involvement <- spells$involvement[[i]]
+      carried <- if (is.null(state[[club]])) 0 else state[[club]]
+      if (involvement == "academy" || involvement == "spell_end") {
+        spells$tenure[[i]] <- NA_real_
+        if (involvement == "spell_end") state[[club]] <- 0
+        next
+      }
+      if (involvement == "full_loan_out") {
+        spells$tenure[[i]] <- 0
+        state[[club]] <- 0
+        next
+      }
+      if (involvement %in% c("senior", "full_loan_in")) {
+        carried <- carried + 1
+        spells$tenure[[i]] <- carried
+        state[[club]] <- carried
+        next
+      }
+      if (involvement %in% c("mid_loan_parent", "mid_loan_in", "mid_move_in", "mid_move_out")) {
+        carried <- carried + 0.5
+        spells$tenure[[i]] <- carried
+        state[[club]] <- if (involvement == "mid_move_out") 0 else carried
+        next
+      }
+      stop("Unknown involvement: ", involvement)
+    }
+  }
+  spells$row_id <- NULL
+  spells
+}
+#+end_src
+
+#+begin_src R :tangle ../notebooks/pl-squad-tenure-points/points.R
+# Results points are 3 for a win and 1 for a draw. Official table points can
+# be lower. The gap is official minus results. Named deductions are the only
+# accepted gaps. Everton 2023-24 is -8: the 10-point deduction was reduced to
+# 6, and the further 2 stood after the club withdrew the appeal.
+
+canonical_club <- function(name) {
+  name <- sub(" [(].*$", "", name)
+  name <- sub(" [Ff][Cc]$", "", name)
+  name <- sub(" [Aa][Ff][Cc]$", "", name)
+  cleaned <- tolower(iconv(enc2utf8(name), to = "ASCII//TRANSLIT"))
+  key <- gsub("[^a-z0-9]", "", cleaned)
+  map <- c(
+    arsenal = "Arsenal",
+    astonvilla = "Aston Villa",
+    barnsley = "Barnsley",
+    birmingham = "Birmingham City",
+    birminghamcity = "Birmingham City",
+    blackburn = "Blackburn Rovers",
+    blackburnrovers = "Blackburn Rovers",
+    blackpool = "Blackpool",
+    bolton = "Bolton Wanderers",
+    boltonwanderers = "Bolton Wanderers",
+    bournemouth = "Bournemouth",
+    afcbournemouth = "Bournemouth",
+    bradford = "Bradford City",
+    bradfordcity = "Bradford City",
+    brentford = "Brentford",
+    brighton = "Brighton and Hove Albion",
+    brightonandhovealbion = "Brighton and Hove Albion",
+    brightonhovealbion = "Brighton and Hove Albion",
+    burnley = "Burnley",
+    cardiff = "Cardiff City",
+    cardiffcity = "Cardiff City",
+    charlton = "Charlton Athletic",
+    charltonath = "Charlton Athletic",
+    charltonathleti = "Charlton Athletic",
+    charltonathletic = "Charlton Athletic",
+    chelsea = "Chelsea",
+    coventry = "Coventry City",
+    coventrycity = "Coventry City",
+    crystalpalace = "Crystal Palace",
+    derby = "Derby County",
+    derbycounty = "Derby County",
+    everton = "Everton",
+    fulham = "Fulham",
+    huddersfield = "Huddersfield Town",
+    huddersfieldtown = "Huddersfield Town",
+    hull = "Hull City",
+    hullcity = "Hull City",
+    ipswich = "Ipswich Town",
+    ipswichtown = "Ipswich Town",
+    leeds = "Leeds United",
+    leedsunited = "Leeds United",
+    leicester = "Leicester City",
+    leicestercity = "Leicester City",
+    liverpool = "Liverpool",
+    luton = "Luton Town",
+    lutontown = "Luton Town",
+    mancity = "Manchester City",
+    manchestercity = "Manchester City",
+    manunited = "Manchester United",
+    manutd = "Manchester United",
+    manchesterutd = "Manchester United",
+    manchesterunited = "Manchester United",
+    middlesbrough = "Middlesbrough",
+    newcastle = "Newcastle United",
+    newcastleutd = "Newcastle United",
+    newcastleunited = "Newcastle United",
+    norwich = "Norwich City",
+    norwichcity = "Norwich City",
+    nottmforest = "Nottingham Forest",
+    notthamforest = "Nottingham Forest",
+    nottingham = "Nottingham Forest",
+    nottinghamforest = "Nottingham Forest",
+    portsmouth = "Portsmouth",
+    qpr = "Queens Park Rangers",
+    queensparkrangers = "Queens Park Rangers",
+    reading = "Reading",
+    sheffieldunited = "Sheffield United",
+    sheffieldutd = "Sheffield United",
+    sheffutd = "Sheffield United",
+    sheffieldwednesday = "Sheffield Wednesday",
+    sheffieldweds = "Sheffield Wednesday",
+    sheffwed = "Sheffield Wednesday",
+    southampton = "Southampton",
+    stoke = "Stoke City",
+    stokecity = "Stoke City",
+    sunderland = "Sunderland",
+    swansea = "Swansea City",
+    swanseacity = "Swansea City",
+    tottenham = "Tottenham Hotspur",
+    tottenhamhotspur = "Tottenham Hotspur",
+    spurs = "Tottenham Hotspur",
+    watford = "Watford",
+    westbrom = "West Bromwich Albion",
+    westbromwichalbion = "West Bromwich Albion",
+    westham = "West Ham United",
+    westhamunited = "West Ham United",
+    wigan = "Wigan Athletic",
+    wiganathletic = "Wigan Athletic",
+    wimbledon = "Wimbledon",
+    wolves = "Wolverhampton Wanderers",
+    wolverhamptonwanderers = "Wolverhampton Wanderers"
+  )
+  if (!key %in% names(map)) stop("Unmapped club: ", name, " key=", key)
+  unname(map[[key]])
+}
+
+named_deductions <- function() {
+  data.frame(
+    club = c("Middlesbrough", "Portsmouth", "Everton", "Nottingham Forest"),
+    season_end = c(1997L, 2010L, 2024L, 2024L),
+    deduction = c(-3L, -9L, -8L, -4L),
+    stringsAsFactors = FALSE
+  )
+}
+
+results_points_from_matches <- function(matches) {
+  if (!all(c("HomeTeam", "AwayTeam", "FTR") %in% names(matches))) {
+    stop("matches need HomeTeam, AwayTeam, and FTR")
+  }
+  home_points <- ifelse(matches$FTR == "H", 3L, ifelse(matches$FTR == "D", 1L, 0L))
+  away_points <- ifelse(matches$FTR == "A", 3L, ifelse(matches$FTR == "D", 1L, 0L))
+  long <- rbind(
+    data.frame(club = matches$HomeTeam, points = home_points, stringsAsFactors = FALSE),
+    data.frame(club = matches$AwayTeam, points = away_points, stringsAsFactors = FALSE)
+  )
+  clubs <- sort(unique(long$club))
+  data.frame(
+    club = clubs,
+    points = vapply(clubs, function(club) sum(long$points[long$club == club]), integer(1)),
+    matches = vapply(clubs, function(club) sum(long$club == club), integer(1)),
+    stringsAsFactors = FALSE
+  )
+}
+
+unexplained_points_gaps <- function(gaps, deductions) {
+  if (!all(c("club", "season_end", "gap") %in% names(gaps))) {
+    stop("gaps need club, season_end, and gap")
+  }
+  explained <- function(i) {
+    if (gaps$gap[[i]] == 0) return(TRUE)
+    hit <- deductions$club == gaps$club[[i]] &
+      deductions$season_end == gaps$season_end[[i]] &
+      deductions$deduction == gaps$gap[[i]]
+    any(hit)
+  }
+  gaps[!vapply(seq_len(nrow(gaps)), explained, logical(1)), , drop = FALSE]
+}
+#+end_src
+
+#+begin_src R :tangle ../notebooks/pl-squad-tenure-points/correlation.R
+# The lead number is the median of defined within-club Pearson correlations.
+# Clubs with fewer than 10 seasons, and clubs whose median tenure does not
+# vary, stay out of that median and are named. The bootstrap redraws seasons
+# inside each club, seed 2026, 2000 replicates, tenure and points kept together.
+
+within_club_correlations <- function(club_seasons, min_seasons = 10L) {
+  clubs <- sort(unique(club_seasons$club))
+  rows <- lapply(clubs, function(club) {
+    d <- club_seasons[club_seasons$club == club, , drop = FALSE]
+    n <- nrow(d)
+    spearman <- NA_real_
+    if (n < min_seasons) {
+      reason <- "fewer than 10 seasons"
+      r <- NA_real_
+      defined <- FALSE
+    } else if (length(unique(d$median_tenure)) < 2) {
+      reason <- "median tenure does not vary"
+      r <- NA_real_
+      defined <- FALSE
+    } else {
+      r <- suppressWarnings(cor(d$median_tenure, d$results_points, method = "pearson"))
+      defined <- is.finite(r)
+      reason <- if (defined) "defined" else "undefined correlation"
+      if (!defined) {
+        r <- NA_real_
+      } else {
+        spearman <- suppressWarnings(cor(d$median_tenure, d$results_points, method = "spearman"))
+        if (!is.finite(spearman)) spearman <- NA_real_
+      }
+    }
+    data.frame(
+      club = club,
+      n_seasons = n,
+      correlation = r,
+      spearman = spearman,
+      defined = defined,
+      reason = reason,
+      stringsAsFactors = FALSE
+    )
+  })
+  out <- do.call(rbind, rows)
+  rownames(out) <- NULL
+  out
+}
+
+lead_summary <- function(correlations) {
+  defined <- correlations[correlations$defined, , drop = FALSE]
+  n_at_least_10 <- sum(correlations$n_seasons >= 10)
+  undefined <- correlations[correlations$n_seasons >= 10 & !correlations$defined, , drop = FALSE]
+  share <- if (n_at_least_10 == 0) NA_real_ else nrow(undefined) / n_at_least_10
+  list(
+    median = if (nrow(defined) == 0) NA_real_ else median(defined$correlation),
+    trimmed_mean = if (nrow(defined) == 0) NA_real_ else mean(defined$correlation, trim = 0.1),
+    spearman = if (nrow(defined) == 0) NA_real_ else median(defined$spearman, na.rm = TRUE),
+    n_defined = nrow(defined),
+    n_at_least_10 = n_at_least_10,
+    undefined_share = share,
+    undefined_clubs = sort(undefined$club),
+    below_min_clubs = sort(correlations$club[correlations$n_seasons < 10])
+  )
+}
+
+undefined_share_sentence <- function(summary) {
+  if (is.na(summary$undefined_share) || summary$undefined_share <= 0.2) {
+    return(NA_character_)
+  }
+  sprintf(
+    "%d of %d clubs with at least 10 seasons are left out of the median, because their correlation is undefined. That is %d%%. The clubs are %s.",
+    length(summary$undefined_clubs),
+    summary$n_at_least_10,
+    round(100 * summary$undefined_share),
+    paste(summary$undefined_clubs, collapse = ", ")
+  )
+}
+
+bootstrap_median_correlation <- function(club_seasons, n_replicates = 2000L, seed = 2026L, min_seasons = 10L) {
+  counts <- table(club_seasons$club)
+  clubs <- sort(names(counts)[counts >= min_seasons])
+  by_club <- lapply(clubs, function(club) {
+    d <- club_seasons[club_seasons$club == club, , drop = FALSE]
+    d[order(d$season_end), , drop = FALSE]
+  })
+  names(by_club) <- clubs
+  set.seed(seed)
+  replicate_medians <- rep(NA_real_, n_replicates)
+  club_draws <- matrix(NA_real_, nrow = n_replicates, ncol = length(clubs))
+  colnames(club_draws) <- clubs
+  for (i in seq_len(n_replicates)) {
+    cors <- numeric()
+    for (j in seq_along(clubs)) {
+      d <- by_club[[j]]
+      drawn <- d[sample.int(nrow(d), nrow(d), replace = TRUE), , drop = FALSE]
+      if (length(unique(drawn$median_tenure)) < 2) next
+      r <- suppressWarnings(cor(drawn$median_tenure, drawn$results_points, method = "pearson"))
+      if (!is.finite(r)) next
+      cors <- c(cors, r)
+      club_draws[i, j] <- r
+    }
+    if (length(cors) > 0) replicate_medians[[i]] <- median(cors)
+  }
+  interval <- as.numeric(quantile(replicate_medians, c(0.025, 0.975), na.rm = TRUE, names = FALSE, type = 7))
+  club_intervals <- data.frame(
+    club = clubs,
+    low = vapply(clubs, function(club) {
+      as.numeric(quantile(club_draws[, club], 0.025, na.rm = TRUE, names = FALSE, type = 7))
+    }, numeric(1)),
+    high = vapply(clubs, function(club) {
+      as.numeric(quantile(club_draws[, club], 0.975, na.rm = TRUE, names = FALSE, type = 7))
+    }, numeric(1)),
+    stringsAsFactors = FALSE
+  )
+  list(
+    replicate_medians = replicate_medians,
+    interval = interval,
+    club_intervals = club_intervals
+  )
+}
+#+end_src
+
+#+begin_src R :tangle ../notebooks/pl-squad-tenure-points/resolution.R
+# The org table is read and not rewritten. A filled row overrides the
+# automatic matcher. match lets the player into the median. exclude keeps
+# the player out. Ambiguous and unmatched players stay out until then.
+# A club-season with any regular still out is absent from the correlation.
+
+normalize_org_table <- function(org_table) {
+  if (is.null(org_table) || ncol(org_table) == 0) return(org_table)
+  key <- tolower(names(org_table))
+  key <- gsub("[^a-z0-9]+", "_", key)
+  key <- sub("^_|_$", "", key)
+  canon <- c(
+    season = "season_end",
+    season_end = "season_end",
+    club = "club",
+    source_name = "source_name",
+    fbref_id = "fbref_id",
+    transfermarkt_id = "tm_id",
+    tm_id = "tm_id",
+    resolution = "resolution",
+    note = "note"
+  )
+  names(org_table) <- ifelse(key %in% names(canon), unname(canon[key]), key)
+  org_table
+}
+
+apply_org_resolution <- function(regulars, org_table) {
+  org_table <- normalize_org_table(org_table)
+  regulars$enters <- FALSE
+  regulars$tm_id <- as.character(regulars$tm_id)
+  if (nrow(org_table) > 0) org_table$tm_id <- as.character(org_table$tm_id)
+  for (i in seq_len(nrow(regulars))) {
+    hit <- org_table$season_end == regulars$season_end[[i]] &
+      org_table$club == regulars$club[[i]] &
+      org_table$source_name == regulars$source_name[[i]]
+    if (any(hit)) {
+      row <- org_table[which(hit)[[1]], ]
+      if (row$resolution == "exclude") {
+        regulars$enters[[i]] <- FALSE
+      } else if (row$resolution == "match") {
+        regulars$enters[[i]] <- TRUE
+        regulars$fbref_id[[i]] <- row$fbref_id
+        regulars$tm_id[[i]] <- row$tm_id
+      } else {
+        stop("resolution must be match or exclude")
+      }
+    } else {
+      regulars$enters[[i]] <- regulars$auto_status[[i]] == "unique"
+    }
+  }
+  regulars
+}
+
+club_seasons_blocked_by_unresolved <- function(regulars) {
+  keys <- paste(regulars$club, regulars$season_end, sep = "\r")
+  blocked <- vapply(split(regulars, keys), function(d) any(!d$enters), logical(1))
+  blocked_keys <- names(blocked)[blocked]
+  if (length(blocked_keys) == 0) {
+    return(data.frame(club = character(), season_end = integer(), stringsAsFactors = FALSE))
+  }
+  data.frame(
+    club = sub("\r.*", "", blocked_keys),
+    season_end = as.integer(sub(".*\r", "", blocked_keys)),
+    stringsAsFactors = FALSE
+  )
+}
+#+end_src
+
+#+begin_src R :tangle ../notebooks/pl-squad-tenure-points/plotting.R
+plot_club_seasons <- function(club_seasons, club) {
+  source_dir <- NULL
+  d <- club_seasons[club_seasons$club == club, , drop = FALSE]
+  d <- d[order(d$season_end), , drop = FALSE]
+  r <- suppressWarnings(cor(d$median_tenure, d$results_points, method = "pearson"))
+  d$season_label <- sprintf("%d\u2013%02d", d$season_end - 1L, d$season_end %% 100L)
+  ggplot2::ggplot(d, ggplot2::aes(season_end, results_points)) +
+    ggplot2::geom_line() +
+    ggplot2::geom_point() +
+    ggplot2::scale_x_continuous(
+      name = "Season",
+      breaks = d$season_end,
+      labels = d$season_label
+    ) +
+    ggplot2::labs(
+      y = "Results points",
+      title = club,
+      caption = sprintf("Pearson r = %.6f", r)
+    )
+}
+
+export_club_plot <- function(club_season_file, club, path) {
+  club_seasons <- utils::read.csv(club_season_file, stringsAsFactors = FALSE)
+  plot <- plot_club_seasons(club_seasons, club)
+  dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
+  ggplot2::ggsave(path, plot, width = 8, height = 4.5, device = svglite::svglite)
+  invisible(path)
+}
+#+end_src
+
+* Next action
+
+Planning status is =ready=.
+
+This plan is the agreed artefact. =/to-spec= and =/to-tickets= are not required to start implementation. Issues for this repo live in GitHub Issues on =tejas-kale/blog=. The engineering-skills config files under =docs/agents/= are not written yet. Publishing a spec or tickets with those skills starts with =/setup-matt-pocock-skills=, then =/to-spec=, then =/to-tickets=. In a later conversation, the implementing agent reads this whole file and treats it as agreed context before any code change.
+
+The implementing agent records =git rev-parse HEAD= on a clean tree, then implements. After implementation, Tejas runs =/code-review= against that baseline, follows the Review Map, and performs the human actions in the Verification Contract.
